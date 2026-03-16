@@ -9,7 +9,10 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import Session
 
 from database import create_db_and_tables, get_session
-from models import SamBid, SeptaQuote, UnisonRequest, DibbsBid
+from models import (
+    SamBid, SeptaQuote, UnisonRequest, DibbsBid,
+    SamScrapeRequest, SeptaScrapeRequest, UnisonScrapeRequest,
+)
 from sam_scraper import SAMGovScraper
 
 # Import Septa Scraper
@@ -63,10 +66,9 @@ async def home(request: Request):
 
 
 @app.post("/scrape_sam")
-async def scrape(request: Request, session: Session = Depends(get_session)):
-    data = await request.json()
-    search_query = data.get("search_query", "")
-    date_filter = data.get("date_filter", None)
+async def scrape(body: SamScrapeRequest, session: Session = Depends(get_session)):
+    search_query = body.search_query
+    date_filter = body.date_filter
 
     try:
         scraper = SAMGovScraper(
@@ -99,10 +101,9 @@ async def scrape(request: Request, session: Session = Depends(get_session)):
 
 
 @app.post("/scrape_septa")
-async def scrape_septa(request: Request, session: Session = Depends(get_session)):
+async def scrape_septa(body: SeptaScrapeRequest, session: Session = Depends(get_session)):
     try:
-        data = await request.json()
-        date_filter = data.get("date_filter")
+        date_filter = body.date_filter
 
         config = SeptaConfig()
         browser_manager = SeptaBrowser(config)
@@ -130,13 +131,13 @@ async def scrape_septa(request: Request, session: Session = Depends(get_session)
         portal.apply_date_filter(date_filter)
         quotes = portal.scrape_all_pages()
 
-        csv_filename = config.get_csv_filename()
-        csv_path = config.get_csv_path()
-        DataExporter.export_to_csv(quotes, csv_path)
+        excel_filename = config.get_excel_filename()
+        excel_path = config.get_excel_path()
+        DataExporter.export_to_excel(quotes, excel_path)
 
         browser_manager.close_driver()
 
-        if os.path.exists(csv_path):
+        if os.path.exists(excel_path):
             # Save to database
             for q in quotes:
                 record = SeptaQuote(
@@ -148,12 +149,12 @@ async def scrape_septa(request: Request, session: Session = Depends(get_session)
                 session.add(record)
             session.commit()
 
-            return JSONResponse({"success": True, "filename": csv_filename})
+            return JSONResponse({"success": True, "filename": excel_filename})
         else:
             return JSONResponse(
                 {
                     "success": False,
-                    "error": "No quotes imported or CSV creation failed.",
+                    "error": "No quotes imported or Excel creation failed.",
                 }
             )
 
@@ -162,10 +163,9 @@ async def scrape_septa(request: Request, session: Session = Depends(get_session)
 
 
 @app.post("/scrape_unison")
-async def scrape_unison(request: Request, session: Session = Depends(get_session)):
+async def scrape_unison(body: UnisonScrapeRequest, session: Session = Depends(get_session)):
     try:
-        data = await request.json()
-        filter_by = data.get("filter_by")
+        filter_by = body.filter_by
 
         scraper = UnisonMarketplaceScraper()
         scraper.run_scraper(filter_by=filter_by)
@@ -200,7 +200,7 @@ async def scrape_unison(request: Request, session: Session = Depends(get_session
 
 
 @app.post("/scrape_dibbs")
-async def scrape_dibbs(request: Request, session: Session = Depends(get_session)):
+async def scrape_dibbs(session: Session = Depends(get_session)):
     try:
         scraper = DibbsScraper(headless=False)
         csv_file = scraper.run()

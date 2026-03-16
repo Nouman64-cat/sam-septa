@@ -1,7 +1,25 @@
 from datetime import datetime
 from typing import Optional
 from sqlmodel import SQLModel, Field
+from pydantic import BaseModel
 
+
+# ── Request body schemas (used by FastAPI endpoints / Swagger UI) ──────────────
+
+class SamScrapeRequest(BaseModel):
+    search_query: str = ""
+    date_filter: Optional[str] = None
+
+
+class SeptaScrapeRequest(BaseModel):
+    date_filter: Optional[str] = None
+
+
+class UnisonScrapeRequest(BaseModel):
+    filter_by: Optional[str] = None
+
+
+# ── SQLModel database table models ─────────────────────────────────────────────
 
 class SamBid(SQLModel, table=True):
     __tablename__ = "sam_bids"
