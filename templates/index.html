@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Source Scraper</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <div class="container">
+        <div class="glass-card">
+            <div class="header">
+                <i class="fa-solid fa-robot logo-icon"></i>
+                <h1>Data <span>Scraper</span></h1>
+                <p>Advanced Procurement Extraction Suite</p>
+            </div>
+
+            <!-- Tabs Navigation -->
+            <div class="tabs-nav">
+                <button class="tab-btn active" data-tab="sam">
+                    <i class="fa-solid fa-flag-usa"></i> SAM.gov
+                </button>
+                <button class="tab-btn" data-tab="septa">
+                    <i class="fa-solid fa-train-subway"></i> SEPTA
+                </button>
+                <button class="tab-btn" data-tab="unison">
+                    <i class="fa-solid fa-cart-shopping"></i> UNISON
+                </button>
+                <button class="tab-btn" data-tab="dibbs">
+                    <i class="fa-solid fa-shield-halved"></i> DIBBS
+                </button>
+            </div>
+
+            <!-- SAM.gov Content -->
+            <div id="sam-content" class="tab-content active">
+                <div class="input-group">
+                    <label for="naics_code">NAICS Code / Keyword</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-magnifying-glass input-icon"></i>
+                        <input type="text" id="naics_code" placeholder="Enter NAICS code or keyword...">
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label for="date_filter">Filter Date (Optional)</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-calendar input-icon"></i>
+                        <input type="date" id="date_filter" placeholder="Select date">
+                    </div>
+                </div>
+                <button id="scrapeSamBtn" class="primary-btn">
+                    <span class="btn-text">Scrape SAM Data</span>
+                    <div class="loader" id="samLoader"></div>
+                </button>
+            </div>
+
+            <!-- SEPTA Content -->
+            <div id="septa-content" class="tab-content">
+                <div class="info-box">
+                    <i class="fa-solid fa-info-circle"></i>
+                    <p>Scrapes SEPTA "Open Quotes" for today's date.</p>
+                </div>
+                <div class="input-group">
+                    <label for="septa_date_filter">Filter Date (Optional)</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-calendar input-icon"></i>
+                        <input type="date" id="septa_date_filter" placeholder="Select date">
+                    </div>
+                </div>
+                <button id="scrapeSeptaBtn" class="primary-btn septa-btn">
+                    <span class="btn-text">Scrape SEPTA Quotes</span>
+                    <div class="loader" id="septaLoader"></div>
+                </button>
+            </div>
+
+            <!-- UNISON Content -->
+            <div id="unison-content" class="tab-content">
+                <div class="info-box">
+                    <i class="fa-solid fa-filter"></i>
+                    <p>Scrapes Unison Marketplace for items "Posted Today".</p>
+                </div>
+                <div class="input-group">
+                    <label for="unison_filter">Filter By (Optional)</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-list input-icon"></i>
+                        <select id="unison_filter" class="filter-select">
+                            <option value="">Default (Posted Today)</option>
+                            <option value="Posted Last 3 Days">Posted Last 3 Days</option>
+                        </select>
+                    </div>
+                </div>
+                <button id="scrapeUnisonBtn" class="primary-btn unison-btn">
+                    <span class="btn-text">Scrape Unison Market</span>
+                    <div class="loader" id="unisonLoader"></div>
+                </button>
+            </div>
+
+            <!-- DIBBS Content -->
+            <div id="dibbs-content" class="tab-content">
+                <div class="info-box">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <p>Scrapes DIBBS RFQs for the most recent Issue Date (Today).</p>
+                </div>
+                <!-- No input needed as per instructions -->
+                <button id="scrapeDibbsBtn" class="primary-btn dibbs-btn" style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);">
+                    <span class="btn-text">Scrape DIBBS</span>
+                    <div class="loader" id="dibbsLoader"></div>
+                </button>
+            </div>
+
+            <!-- Shared Status & Download Area -->
+            <div id="status" class="status-message"></div>
+
+            <div id="downloadSection" class="download-section hidden">
+                <div class="success-icon">
+                    <i class="fa-solid fa-check"></i>
+                </div>
+                <p>Scraping Completed Successfully!</p>
+                <a id="downloadLink" href="#" class="download-btn">
+                    <i class="fa-solid fa-file-csv"></i> Download CSV
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+
+</html>
