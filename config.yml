@@ -176,6 +176,26 @@ sam:
     # updated_date:  "sfm%5BupdatedDate%5D%5Btype%5D=custom&sfm%5BupdatedDate%5D%5BstartDate%5D={date}"
 
   # --------------------------------------------------------------------------
+  # SAM.gov "Updated Date" range-filter UI inputs
+  #
+  # These are the date-picker <input> element IDs on the SAM.gov search page.
+  # The scraper fills them after page 1 loads so Angular's search state picks
+  # up the date range and applies it server-side for subsequent page clicks.
+  #
+  # from_input_id  – DOM id of the "Updated Date From" date-picker input
+  # to_input_id    – DOM id of the "Updated Date To"   date-picker input
+  # input_date_format – strftime format used when typing into the date picker
+  #                     (SAM.gov date pickers accept MM/DD/YYYY)
+  # apply_wait     – seconds to wait after filling the inputs so Angular can
+  #                  re-render the filtered results before scraping starts
+  # --------------------------------------------------------------------------
+  date_filter_ui:
+    from_input_id:     "formly_31_datepicker_updatedDateFrom_1"
+    to_input_id:       "formly_31_datepicker_updatedDateTo_2"
+    input_date_format: "%m/%d/%Y"
+    apply_wait:        3
+
+  # --------------------------------------------------------------------------
   # Content filtering (applied at card / search-results level)
   # --------------------------------------------------------------------------
   filtering:

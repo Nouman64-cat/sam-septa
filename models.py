@@ -7,7 +7,13 @@ from pydantic import BaseModel
 # ── Request body schemas (used by FastAPI endpoints / Swagger UI) ──────────────
 
 class SamScrapeRequest(BaseModel):
-    date_filter: Optional[str] = None
+    date_filter: Optional[str] = None   # from-date  YYYY-MM-DD  (start of range)
+    date_to:     Optional[str] = None   # to-date    YYYY-MM-DD  (end   of range)
+    # Scenarios:
+    #   date_filter only           → range [date_filter, today]
+    #   date_filter + date_to      → range [date_filter, date_to]
+    #   date_filter == date_to     → exact single-day match
+    #   neither field provided     → no date filter (scrape everything)
 
 
 class SeptaScrapeRequest(BaseModel):
