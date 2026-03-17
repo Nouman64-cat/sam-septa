@@ -523,6 +523,44 @@ class SAMGovScraper:
                             )
                             continue
 
+                    # ── Filter 4: DoD / DLA check at CARD level ─────────
+                    # SAM.gov cards display the Department, Sub-tier and
+                    # Office directly on the search result — no need to open
+                    # the detail page just to discard the bid.
+                    # We reuse the same skip-term lists from config so the
+                    # logic stays in one place.
+                    if card_text:
+                        card_lower = card_text.lower()
+                        _dod_skip   = False
+                        _dod_reason = ""
+
+                        for term in self._skip_cond.get("department_skip_terms", []):
+                            if term in card_lower:
+                                _dod_skip   = True
+                                _dod_reason = f"Dept contains '{term}'"
+                                break
+
+                        if not _dod_skip:
+                            for term in self._skip_cond.get("subtier_skip_terms", []):
+                                if term in card_lower:
+                                    _dod_skip   = True
+                                    _dod_reason = f"Subtier contains '{term}'"
+                                    break
+
+                        if not _dod_skip:
+                            for term in self._skip_cond.get("office_skip_terms", []):
+                                if term in card_lower:
+                                    _dod_skip   = True
+                                    _dod_reason = f"Office contains '{term}'"
+                                    break
+
+                        if _dod_skip:
+                            logger.info(
+                                f"[SKIP-CARD] DoD/DLA ({_dod_reason}) – "
+                                f"detail page NOT opened | {title}"
+                            )
+                            continue
+
                     candidates.append({
                         "url":                       url,
                         "title":                     title,
@@ -649,6 +687,18 @@ class SAMGovScraper:
             # ── Store ONLY the bare date in Updated Date column ──────────
             #    Strip "(N)" so the CSV shows e.g. "Mar 17, 2026" only.
             data["Updated Date"] = self._clean_updated_date(data["Updated Date"])
+
+            # ── Published Date exact-match (detail-level safety net) ──────
+            # Card-level filter already catches most mismatches, but some
+            # SAM.gov cards don't expose the "Published Date" label text.
+            # This check ensures no row is ever written whose Published Date
+            # doesn't match the user's filter date.
+            if not self._matches_published_date(data["Published Date"]):
+                logger.info(
+                    f"[SKIP] Published Date '{data['Published Date']}' "
+                    f"!= filter {self.filter_date_obj.date()} | {data['Notice Title']}"
+                )
+                return None
 
             # ── Apply DoD / DLA skip conditions ─────────────────────────
             skip, reason = self._should_skip_bid(data)
