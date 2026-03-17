@@ -95,7 +95,7 @@ class SAMGovScraper:
                 fmt = self._date_cfg.get("filter_date_format", "%Y-%m-%d")
                 self.filter_date_obj = datetime.strptime(self.date_filter, fmt)
                 logger.info(
-                    f"Date filter active: >= {self.filter_date_obj.strftime('%Y-%m-%d')}"
+                    f"Date filter active: Published Date = {self.filter_date_obj.strftime('%Y-%m-%d')} (exact match)"
                 )
             except Exception as e:
                 logger.warning(
@@ -378,6 +378,88 @@ class SAMGovScraper:
         hi = self._timeouts.get("delay_max", 4)
         time.sleep(random.uniform(lo, hi))
 
+    # ------------------------------------------------------------------
+    # Date-window boundary detector
+    # ------------------------------------------------------------------
+    def _is_past_date_window(self) -> bool:
+        """
+        Returns True when ALL cards currently visible on the search results
+        page have an Updated Date (= SAM.gov's modifiedDate, the sort key)
+        strictly BEFORE the user's filter date.
+
+        WHY THIS IS THE CORRECT STOP SIGNAL
+        ─────────────────────────────────────
+        SAM.gov sorts results by -modifiedDate (newest first).  A bid
+        published on March 17 has modifiedDate >= March 17 by definition
+        (it was at minimum modified on the day it was published).  Once
+        every card on a page shows an Updated Date < March 17, all
+        remaining pages are guaranteed to also be before March 17 — the
+        sort order ensures no later date can appear after this point.
+
+        Returns False when:
+          • No date filter is active                (never stop early)
+          • No Updated Date is parseable on the page (can't determine → keep going)
+          • At least one card has Updated Date >= filter date  (still in window)
+        """
+        if not self.filter_date_obj:
+            return False
+
+        filter_date   = self.filter_date_obj.date()
+        updated_label = self._date_cfg.get("updated_date_card_label", "Updated Date")
+
+        try:
+            # Re-use the same card selector logic as get_links_from_current_page()
+            cards = []
+            for sel in self._selectors.get("card_selectors", [".sds-card"]):
+                cards = self.driver.find_elements(By.CSS_SELECTOR, sel)
+                if cards:
+                    break
+
+            if not cards:
+                return False   # no cards to read → can't determine
+
+            dates_found: list = []
+            for card in cards:
+                try:
+                    card_text = card.text
+                    if updated_label not in card_text:
+                        continue
+                    raw = (
+                        card_text.split(updated_label)[1]
+                        .strip().split("\n")[0].strip()
+                    )
+                    # Strip version count  "(1)" etc.
+                    raw = re.sub(r"\s*\(\d+\)\s*", "", raw).strip()
+                    m = self._DATE_PATTERN.search(raw)
+                    if not m:
+                        continue
+                    date_str = re.sub(r"\s+", " ", m.group()).strip()
+                    for fmt in ("%b %d, %Y", "%b %d,%Y"):
+                        try:
+                            dates_found.append(
+                                datetime.strptime(date_str, fmt).date()
+                            )
+                            break
+                        except ValueError:
+                            continue
+                except Exception:
+                    continue
+
+            if not dates_found:
+                return False   # couldn't parse any dates → give benefit of doubt
+
+            # Stop only when EVERY parseable date is strictly before the filter
+            past = all(d < filter_date for d in dates_found)
+            if past:
+                logger.info(
+                    f"Date window passed: all {len(dates_found)} card(s) on this "
+                    f"page have Updated Date < {filter_date} — stopping."
+                )
+            return past
+
+        except Exception:
+            return False   # safety net: never stop due to an unexpected error
+
     def _wait_for_page_load(self):
         try:
             WebDriverWait(
@@ -454,7 +536,7 @@ class SAMGovScraper:
         m = re.search(pattern, date_str)
         if not m:
             # Date string present but in an unrecognised format → keep the bid
-            logger.debug(f"_matches_published_date: unrecognised format '{date_str}' – keeping")
+            logger.debug(f"_matches_published_date: unrecognised format '{date_str}' - keeping")
             return True
 
         # Normalise whitespace before parsing: "Mar  5, 2026" → "Mar 5, 2026"
@@ -474,7 +556,7 @@ class SAMGovScraper:
                 continue
 
         # Parse failed for all formats → keep the bid rather than silently drop
-        logger.debug(f"_matches_published_date: could not parse '{raw}' – keeping")
+        logger.debug(f"_matches_published_date: could not parse '{raw}' - keeping")
         return True
 
     def _clean_updated_date(self, date_str: str) -> str:
@@ -616,29 +698,78 @@ class SAMGovScraper:
                                 .strip().split("\n")[0].strip()
                             )
 
-                        # Published Date (label from config)
-                        pub_label = self._date_cfg.get(
-                            "published_date_card_label", "Published Date"
+                        # ── Published Date: CSS class extraction ──────────
+                        # SAM.gov uses class "sds-field__value0" (and the un-
+                        # suffixed "sds-field__value") for card field values.
+                        # XPath contains(@class,'sds-field__value') matches
+                        # both variants without hard-coding the suffix.
+                        pub_label = self._selectors.get(
+                            "card_pub_date_label",
+                            self._date_cfg.get(
+                                "published_date_card_label", "Published Date"
+                            ),
                         )
-                        if pub_label in card_text:
+                        # Strategy A: find the value element that immediately
+                        # follows a label whose text is "Published Date".
+                        # Works for both sds-field__value and sds-field__value0.
+                        try:
+                            val_el = card.find_element(
+                                By.XPATH,
+                                f".//*[contains(@class,'{self._selectors.get('card_field_label_class','sds-field__label')}') "
+                                f"and normalize-space(text())='{pub_label}']"
+                                f"/following-sibling::*[contains(@class,'{self._selectors.get('card_field_value_class','sds-field__value')}')]",
+                            )
+                            card_pub_date = val_el.text.strip()
+                        except Exception:
+                            pass
+
+                        # Strategy B: parent-then-child (some DOM layouts put
+                        # label + value as siblings inside the same container)
+                        if not card_pub_date:
+                            try:
+                                val_el = card.find_element(
+                                    By.XPATH,
+                                    f".//*[contains(@class,'{self._selectors.get('card_field_label_class','sds-field__label')}') "
+                                    f"and normalize-space(text())='{pub_label}']"
+                                    f"/../*[contains(@class,'{self._selectors.get('card_field_value_class','sds-field__value')}')]",
+                                )
+                                card_pub_date = val_el.text.strip()
+                            except Exception:
+                                pass
+
+                        # Strategy C: text-split fallback (original approach)
+                        if not card_pub_date and pub_label in card_text:
                             card_pub_date = (
                                 card_text.split(pub_label)[1]
                                 .strip().split("\n")[0].strip()
                             )
+
                     except Exception:
                         pass
 
-                    # ── Filter 2: version count + Updated Date range ─────
+                    # ── Filter 2: version count ──────────────────────────
                     if not self._check_updated_date_rule(updated_date):
                         logger.info(f"[SKIP] Date/version rule: {updated_date} | {title}")
                         continue
 
                     # ── Filter 3: Published Date exact-day match (CARD) ──
-                    # Done here so we NEVER visit a detail page for a bid
-                    # whose Published Date doesn't match the user's filter.
-                    # If the card has no Published Date label, the bid still
-                    # passes – the detail page will catch it as a safety net.
-                    if self.filter_date_obj and card_pub_date:
+                    # This is the PRIMARY date gate.  With the filter active,
+                    # a detail page is NEVER opened unless the card's own
+                    # Published Date field confirms a match.  This prevents
+                    # off-date bids (e.g. March 16 when user asked for March
+                    # 17) from ever wasting a network round-trip.
+                    #
+                    # Strict rules (filter active):
+                    #   • Date found + matches filter  → proceed
+                    #   • Date found + does NOT match  → skip card entirely
+                    #   • Date NOT found on card        → skip card (cannot confirm)
+                    if self.filter_date_obj:
+                        if not card_pub_date:
+                            logger.info(
+                                f"[SKIP-CARD] Published Date not found on card "
+                                f"(filter active – cannot confirm date) | {title}"
+                            )
+                            continue
                         if not self._matches_published_date(card_pub_date):
                             logger.info(
                                 f"[SKIP-CARD] Published {card_pub_date} "
@@ -833,18 +964,13 @@ class SAMGovScraper:
             #    Strip "(N)" so the CSV shows e.g. "Mar 17, 2026" only.
             data["Updated Date"] = self._clean_updated_date(data["Updated Date"])
 
-            # ── Published Date exact-match (detail-level safety net) ──────
-            # Card-level filter already catches most mismatches, but some
-            # SAM.gov cards don't expose the "Published Date" label text.
-            # This check ensures no row is ever written whose Published Date
-            # doesn't match the user's filter date.
-            if not self._matches_published_date(data["Published Date"]):
-                logger.info(
-                    f"[SKIP] Published Date '{data['Published Date']}' "
-                    f"!= filter {self.filter_date_obj.date()} | {data['Notice Title']}"
-                )
-                return None
-
+            # ── Published Date (extracted from detail page) ───────────────
+            # We no longer apply a strict exact-match or empty-date rule here.
+            # SAM.gov sometimes shows different dates on the card vs the
+            # detail page (e.g., Mar 17 on card, Mar 16 on detail). The user
+            # wants to trust the CARD's published date, which we already verified
+            # in get_links_from_current_page(). We just extract what's here for
+            # the CSV without throwing the bid away.
             # ── Apply DoD / DLA skip conditions ─────────────────────────
             skip, reason = self._should_skip_bid(data)
             if skip:
@@ -1358,7 +1484,7 @@ class SAMGovScraper:
 
         abs_path = filepath.resolve()
         logger.info(f"CSV created (headers written): {abs_path}")
-        print(f"\n[SAM] ✓ CSV file created — rows are written instantly as they are scraped:\n"
+        print(f"\n[SAM] CSV file created - rows are written instantly as they are scraped:\n"
               f"      {abs_path}\n")
         return filepath
 
@@ -1415,7 +1541,7 @@ class SAMGovScraper:
         # ────────────────────────────────────────────────────────────────
 
         while extracted_count < max_records:
-            logger.info(f"── Page {page} ──────────────────────────────────────")
+            logger.info(f"-- Page {page} ------------------------------------------")
 
             if page == 1:
                 # ── Page 1: navigate directly via URL ────────────────────
@@ -1445,7 +1571,7 @@ class SAMGovScraper:
                     pass
 
                 if not has_cards:
-                    logger.info("Page 1: no cards rendered — end of results.")
+                    logger.info("Page 1: no cards rendered - end of results.")
                     break
 
             else:
@@ -1467,9 +1593,14 @@ class SAMGovScraper:
             logger.info(
                 f"Page {page}: {len(candidates)} candidate(s) after card filters."
             )
-            # If every card was filtered client-side, continue to next page.
-            # Do NOT stop – matching bids may exist on subsequent pages.
+            # If every card was filtered client-side, check whether we have
+            # moved past the date window before deciding to continue.
+            # Since SAM.gov sorts by -modifiedDate, once every card on a page
+            # has Updated Date < filter date no later page can contain
+            # matching bids — stop immediately instead of paging forever.
             if not candidates:
+                if self._is_past_date_window():
+                    break
                 page += 1
                 continue
 
@@ -1486,7 +1617,7 @@ class SAMGovScraper:
                     scraped_urls.add(bid_url)
                     continue
 
-                logger.info(f"Scraping → {bid_title}")
+                logger.info(f"Scraping -> {bid_title}")
                 
                 # Open in new tab to preserve the search page's internal state
                 self.driver.execute_script("window.open('');")
@@ -1505,7 +1636,7 @@ class SAMGovScraper:
                     scraped_urls.add(bid_url)
                     scraped_titles.add(bid_title)
                     extracted_count += 1
-                    logger.info(f"✓  {extracted_count} rows saved  →  {self._csv_filepath.name}")
+                    logger.info(f"[OK] {extracted_count} rows saved -> {self._csv_filepath.name}")
 
             page += 1
 
@@ -1513,9 +1644,9 @@ class SAMGovScraper:
         # Log the final summary and return the absolute file path.
         abs_path = self._csv_filepath.resolve() if self._csv_filepath else None
         if abs_path:
-            print(f"\n[SAM] ✓ Scraping complete – {extracted_count} rows saved to:\n"
+            print(f"\n[SAM] Scraping complete - {extracted_count} rows saved to:\n"
                   f"      {abs_path}\n")
-            logger.info(f"Scraping complete – {extracted_count} rows → {abs_path}")
+            logger.info(f"Scraping complete - {extracted_count} rows -> {abs_path}")
         self.close()
         return str(abs_path) if abs_path else None
 
@@ -1556,9 +1687,9 @@ class SAMGovScraper:
                 df.to_csv(filepath, index=False, encoding="utf-8-sig")
                 abs_path = filepath.resolve()
                 logger.warning(
-                    f"No rows passed all filters – empty CSV created → {abs_path}"
+                    f"No rows passed all filters - empty CSV created -> {abs_path}"
                 )
-                print(f"\n[SAM] ⚠  No bids matched all filters. "
+                print(f"\n[SAM] [!] No bids matched all filters. "
                       f"Empty CSV created:\n      {abs_path}\n")
             except Exception as e:
                 logger.error(f"Error creating empty CSV: {e}")
@@ -1572,8 +1703,8 @@ class SAMGovScraper:
         try:
             df.to_csv(filepath, index=False, encoding="utf-8-sig")
             abs_path = filepath.resolve()
-            logger.info(f"CSV saved → {abs_path}  ({len(df)} rows)")
-            print(f"\n[SAM] ✓  CSV saved ({len(df)} rows):\n      {abs_path}\n")
+            logger.info(f"CSV saved -> {abs_path}  ({len(df)} rows)")
+            print(f"\n[SAM] CSV saved ({len(df)} rows):\n      {abs_path}\n")
             return str(abs_path)
 
         except PermissionError:
@@ -1584,13 +1715,13 @@ class SAMGovScraper:
             backup   = output_dir / f"{self._csv_cfg.get('backup_prefix', 'sam-backup-')}{ts}.csv"
             df.to_csv(backup, index=False, encoding="utf-8-sig")
             abs_path = backup.resolve()
-            logger.warning(f"Original file open – backup saved → {abs_path}")
-            print(f"\n[SAM] ⚠  Original file was open. Backup saved:\n      {abs_path}\n")
+            logger.warning(f"Original file open - backup saved -> {abs_path}")
+            print(f"\n[SAM] [!] Original file was open. Backup saved:\n      {abs_path}\n")
             return str(abs_path)
 
         except Exception as e:
             logger.error(f"Error saving CSV: {e}")
-            print(f"\n[SAM] ✗  Failed to save CSV: {e}\n")
+            print(f"\n[SAM] [ERR] Failed to save CSV: {e}\n")
             return None
 
     def close(self):
@@ -1619,7 +1750,7 @@ if __name__ == "__main__":
         # CSV contains everything scraped up to this point. No extra save needed.
         if scraper._csv_filepath:
             abs_path = scraper._csv_filepath.resolve()
-            print(f"\n[SAM] ⚠  Stopped by user. Data saved to:\n      {abs_path}\n")
+            print(f"\n[SAM] [!] Stopped by user. Data saved to:\n      {abs_path}\n")
         scraper.close()
         scraper.close()
     except Exception as e:

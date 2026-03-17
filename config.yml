@@ -261,6 +261,22 @@ sam:
     # Substring that must appear in a fallback link's href
     title_href_contains: "opp"
 
+    # ── Card-level field extraction ──────────────────────────────────────────
+    # SAM.gov renders each field on a search-result card inside a small
+    # container that has a label element and a value element.
+    #
+    #   <sds-field>
+    #     <span class="sds-field__label">Published Date</span>
+    #     <span class="sds-field__value0">Mar 17, 2026</span>   ← target
+    #   </sds-field>
+    #
+    # The value class is "sds-field__value0" (SAM.gov uses a 0-suffixed
+    # variant).  We use XPath contains(@class,'sds-field__value') so it
+    # matches both the plain and the suffixed form.
+    card_field_label_class:     "sds-field__label"
+    card_field_value_class:     "sds-field__value"   # also matches sds-field__value0
+    card_pub_date_label:        "Published Date"      # label text to search for
+
   # --------------------------------------------------------------------------
   # HTML element IDs on SAM.gov opportunity detail pages
   # --------------------------------------------------------------------------
