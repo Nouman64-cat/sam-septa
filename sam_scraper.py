@@ -578,6 +578,18 @@ class SAMGovScraper:
     # as garbage and discarded before falling back to a cleaner extractor.
     _DATE_PATTERN = re.compile(r"[A-Z][a-z]{2}\s+\d{1,2},\s*\d{4}")
 
+    # Additional patterns for alternative date formats that SAM.gov (or
+    # the user's browser timezone conversion) may produce:
+    #   ISO 8601 : "2026-03-31T17:00:00+05:30"
+    #   Slash    : "03/31/2026"
+    #   Full name: "March 31, 2026"
+    _ISO_DATE_RE   = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+    _SLASH_DATE_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
+    _FULL_MONTH_RE = re.compile(
+        r"(January|February|March|April|May|June|July|August|"
+        r"September|October|November|December)\s+(\d{1,2}),?\s*(\d{4})"
+    )
+
     def _looks_like_date(self, s: str) -> bool:
         """
         Return True when s contains a recognisable date token (Mon DD, YYYY).
@@ -585,6 +597,60 @@ class SAMGovScraper:
         other non-date text that fallback strategies sometimes return.
         """
         return bool(self._DATE_PATTERN.search(s)) if s else False
+
+    def _parse_any_date(self, s: str) -> str:
+        """
+        Extract a date from ANY format and normalise it to "Mon D, YYYY".
+
+        Handles all formats SAM.gov (or the user's browser timezone
+        conversion) may produce, including but not limited to:
+          "Mar 17, 2026 2:26 PM GMT+7"   -> "Mar 17, 2026"
+          "2026-03-31T17:00:00+05:30"    -> "Mar 31, 2026"
+          "2026-03-31"                   -> "Mar 31, 2026"
+          "03/31/2026"                   -> "Mar 31, 2026"
+          "March 31, 2026"               -> "Mar 31, 2026"
+          "Mar 31, 2026"                 -> "Mar 31, 2026"  (unchanged)
+
+        Returns "" if no date pattern can be found in s.
+        """
+        if not s:
+            return ""
+
+        # 1: Already in "Mon DD, YYYY" form (with optional time/tz suffix)
+        m = self._DATE_PATTERN.search(s)
+        if m:
+            return m.group().strip()
+
+        # 2: ISO 8601  "2026-03-31T17:00:00+05:30"  or bare "2026-03-31"
+        m = self._ISO_DATE_RE.search(s)
+        if m:
+            try:
+                d = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                return f"{d.strftime('%b')} {d.day}, {d.year}"
+            except ValueError:
+                pass
+
+        # 3: MM/DD/YYYY  "03/31/2026"
+        m = self._SLASH_DATE_RE.search(s)
+        if m:
+            try:
+                d = datetime(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+                return f"{d.strftime('%b')} {d.day}, {d.year}"
+            except ValueError:
+                pass
+
+        # 4: Full month name  "March 31, 2026"
+        m = self._FULL_MONTH_RE.search(s)
+        if m:
+            try:
+                d = datetime.strptime(
+                    f"{m.group(1)} {int(m.group(2))} {m.group(3)}", "%B %d %Y"
+                )
+                return f"{d.strftime('%b')} {d.day}, {d.year}"
+            except ValueError:
+                pass
+
+        return ""
 
     def _is_valid_title(self, title: str) -> bool:
         """Returns False if the title contains any forbidden keyword."""
@@ -919,6 +985,15 @@ class SAMGovScraper:
             data["Updated Date"] = _raw_updated
 
             # ── Field 7: Date Offers Due ─────────────────────────────────
+            # SAM.gov can show this in many formats depending on the user's
+            # browser locale / timezone, e.g.:
+            #   "Mar 31, 2026 5:00 PM GMT+7"
+            #   "2026-03-31T17:00:00+05:30"
+            #   "03/31/2026"
+            # _parse_any_date() normalises all of these to "Mon D, YYYY".
+            # If the primary element lookup fails we try an alternate ID and
+            # then a full page-body regex scan so the field is never left
+            # blank when the date IS present on the page.
             _raw_due = self._get_field(
                 soup, ids.get("date_offers_due", "date-offers-date"), "Date Offers Due"
             )
@@ -926,25 +1001,44 @@ class SAMGovScraper:
                 _raw_due = self._get_field(
                     soup, ids.get("date_offers_due_alt", "offers-due-date"), ""
                 )
-            # Same guard: discard non-date garbage from fallback strategies
-            if _raw_due and not self._looks_like_date(_raw_due):
-                logger.debug(
-                    f"Date Offers Due fallback returned non-date value "
-                    f"'{_raw_due[:60]}' – discarding."
-                )
-                _raw_due = ""
+
+            # Normalise: extract just the date regardless of time/tz suffix
+            _raw_due = self._parse_any_date(_raw_due)
+
+            # Fallback: scan the full rendered page body for the date
+            if not _raw_due:
+                _fallback_due = self._regex_date_from_page("Date Offers Due")
+                if not _fallback_due:
+                    # Some pages label it "Response Date" instead
+                    _fallback_due = self._regex_date_from_page("Response Date")
+                if _fallback_due:
+                    _raw_due = self._parse_any_date(_fallback_due)
+                    if _raw_due:
+                        logger.debug(f"Date Offers Due recovered via page-text fallback: {_raw_due}")
+
             data["Date Offers Due"] = _raw_due
 
             # ── Field 8: Published Date ──────────────────────────────────
+            # Uses the same normalise + fallback pipeline as Date Offers Due.
+            # Handles any format SAM.gov may show:
+            #   "Mar 17, 2026 2:26 PM GMT+7"
+            #   "2026-03-17T00:00:00+05:30"
+            #   "03/17/2026"  etc.
             _raw_pub = self._get_field(
                 soup, ids.get("published_date", "published-date"), "Published Date"
             )
-            if _raw_pub and not self._looks_like_date(_raw_pub):
-                logger.debug(
-                    f"Published Date fallback returned non-date value "
-                    f"'{_raw_pub[:60]}' – discarding."
-                )
-                _raw_pub = ""
+
+            # Normalise to "Mon D, YYYY"
+            _raw_pub = self._parse_any_date(_raw_pub)
+
+            # Fallback: scan the full rendered page body for the date
+            if not _raw_pub:
+                _fallback_pub = self._regex_date_from_page("Published Date")
+                if _fallback_pub:
+                    _raw_pub = self._parse_any_date(_fallback_pub)
+                    if _raw_pub:
+                        logger.debug(f"Published Date recovered via page-text fallback: {_raw_pub}")
+
             data["Published Date"] = _raw_pub
 
             # ── Field 9: Office ──────────────────────────────────────────
