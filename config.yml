@@ -7,13 +7,16 @@ urls:
 
   sam:
     # {page} is the only placeholder – substituted at runtime via str.format(page=N)
-    # Set-asides: NONE, SBA, 8A, SDVOSBC, WOSB, SBP (Partial Small Business – FAR 19.5)
-    # Date params (Response Date + Updated Date) are appended dynamically from user input.
-    # sfm[status][is_active]=true has been REMOVED so that searches on past
-    # dates return results.  With is_active=true, SAM.gov silently filters out
-    # all expired/closed bids, producing zero results for any date older than
-    # the current response-deadline window.
-    base_url: "https://sam.gov/search/?page={page}&pageSize=100&sort=-modifiedDate&index=opp&sfm%5BsetAside%5D%5B0%5D%5Bkey%5D=NONE&sfm%5BsetAside%5D%5B0%5D%5Bvalue%5D=No%20Set%20aside%20used&sfm%5BsetAside%5D%5B1%5D%5Bkey%5D=SBA&sfm%5BsetAside%5D%5B1%5D%5Bvalue%5D=Total%20Small%20Business%20Set-Aside%20(FAR%2019.5)&sfm%5BsetAside%5D%5B2%5D%5Bkey%5D=8A&sfm%5BsetAside%5D%5B2%5D%5Bvalue%5D=8(a)%20Set-Aside%20(FAR%2019.8)&sfm%5BsetAside%5D%5B3%5D%5Bkey%5D=SDVOSBC&sfm%5BsetAside%5D%5B3%5D%5Bvalue%5D=Service-Disabled%20Veteran-Owned%20Small%20Business%20(SDVOSB)%20Set-Aside%20(FAR%2019.14)&sfm%5BsetAside%5D%5B4%5D%5Bkey%5D=WOSB&sfm%5BsetAside%5D%5B4%5D%5Bvalue%5D=SBA%20Certified%20Women-Owned%20Small%20Business%20(WOSB)%20Program%20Set-Aside%20(FAR%2019.15)&sfm%5BsetAside%5D%5B5%5D%5Bkey%5D=SBP&sfm%5BsetAside%5D%5B5%5D%5Bvalue%5D=Partial%20Small%20Business%20Set-Aside%20(FAR%2019.5)&sfm%5BtypeOfNotice%5D%5B0%5D%5Bkey%5D=o&sfm%5BtypeOfNotice%5D%5B0%5D%5Bvalue%5D=Solicitation&sfm%5BtypeOfNotice%5D%5B1%5D%5Bkey%5D=k&sfm%5BtypeOfNotice%5D%5B1%5D%5Bvalue%5D=Combined%20Synopsis%2FSolicitation"
+    # This URL exactly matches the working search the user verified in the browser.
+    # Key parameters:
+    #   sfm[status][is_active]=true          – only open/active solicitations
+    #   sfm[simpleSearch][keywordRadio]=ALL  – keyword match mode
+    #   sfm[dates][...Select]=customDate     – UI date-picker state (no actual values;
+    #                                          actual posted-date values appended via
+    #                                          url_date_params at runtime)
+    #   Set-asides: SBA, 8A, WOSB, LAS, NONE, SBP
+    #   Type of notice: Solicitation + Combined Synopsis/Solicitation
+    base_url: "https://sam.gov/search/?page={page}&pageSize=100&sort=-modifiedDate&index=opp&sfm%5BsimpleSearch%5D%5BkeywordRadio%5D=ALL&sfm%5Bstatus%5D%5Bis_active%5D=true&sfm%5Bdates%5D%5BresponseDue%5D%5BresponseDueSelect%5D=customDate&sfm%5Bdates%5D%5BupdatedDate%5D%5BupdatedDateSelect%5D=customDate&sfm%5BtypeOfNotice%5D%5B0%5D%5Bkey%5D=o&sfm%5BtypeOfNotice%5D%5B0%5D%5Bvalue%5D=Solicitation&sfm%5BtypeOfNotice%5D%5B1%5D%5Bkey%5D=k&sfm%5BtypeOfNotice%5D%5B1%5D%5Bvalue%5D=Combined%20Synopsis%2FSolicitation&sfm%5BsetAside%5D%5B0%5D%5Bkey%5D=SBA&sfm%5BsetAside%5D%5B0%5D%5Bvalue%5D=Total%20Small%20Business%20Set-Aside%20(FAR%2019.5)&sfm%5BsetAside%5D%5B1%5D%5Bkey%5D=8A&sfm%5BsetAside%5D%5B1%5D%5Bvalue%5D=8(a)%20Set-Aside%20(FAR%2019.8)&sfm%5BsetAside%5D%5B2%5D%5Bkey%5D=WOSB&sfm%5BsetAside%5D%5B2%5D%5Bvalue%5D=SBA%20Certified%20Women-Owned%20Small%20Business%20(WOSB)%20Program%20Set-Aside%20(FAR%2019.15)&sfm%5BsetAside%5D%5B3%5D%5Bkey%5D=LAS&sfm%5BsetAside%5D%5B3%5D%5Bvalue%5D=Local%20Area%20Set-Aside%20(FAR%2026.2)&sfm%5BsetAside%5D%5B4%5D%5Bkey%5D=NONE&sfm%5BsetAside%5D%5B4%5D%5Bvalue%5D=No%20Set%20aside%20used&sfm%5BsetAside%5D%5B5%5D%5Bkey%5D=SBP&sfm%5BsetAside%5D%5B5%5D%5Bvalue%5D=Partial%20Small%20Business%20Set-Aside%20(FAR%2019.5)"
 
 
 # ==============================================================================
@@ -150,19 +153,25 @@ sam:
   # URL date param templates – appended to base_url when date_filter is provided.
   # {date} is replaced at runtime with YYYY-MM-DD from the user's input.
   #
-  # posted_date  → filters SAM.gov results to bids PUBLISHED on exactly that
-  #               day (startDate = endDate = user's date).  This is the primary
-  #               filter that makes Published Date in the output match what the
-  #               user entered.
+  # posted_date  → SAM.gov server-side filter: only return bids published on
+  #               exactly that day (startDate = endDate = user's date).
   #
-  # response_date → additionally restricts to bids whose deadline is >= that
-  #                date so we only see still-relevant solicitations.
+  #   *** DISABLED ***
+  #   When posted_date is active, SAM.gov only returns bids from that one date,
+  #   which typically fills < 1 page (< 100 results).  This means page 2 never
+  #   exists for the query, so _verify_on_correct_page(2) correctly detects a
+  #   redirect and stops — but the user only gets bids from page 1.
   #
-  # updated_date  → additionally restricts by last-updated date (pairs with
-  #                the version-count rule applied client-side).
+  #   Instead we let SAM.gov return ALL active bids across ALL pages (sorted
+  #   by -modifiedDate) and rely on the client-side _matches_published_date()
+  #   filter to keep only bids whose Published Date matches the user's input.
+  #   This is slower (scans more pages) but finds every matching bid.
+  #
+  # response_date → restricts to bids whose deadline is >= that date.
+  # updated_date  → restricts by last-updated date.
   # --------------------------------------------------------------------------
-  url_date_params:
-    posted_date:   "sfm%5BpostedDate%5D%5Btype%5D=custom&sfm%5BpostedDate%5D%5BstartDate%5D={date}&sfm%5BpostedDate%5D%5BendDate%5D={date}"
+  url_date_params: {}
+    # posted_date:   "sfm%5BpostedDate%5D%5Btype%5D=custom&sfm%5BpostedDate%5D%5BstartDate%5D={date}&sfm%5BpostedDate%5D%5BendDate%5D={date}"
     # response_date: "sfm%5BresponseDate%5D%5Btype%5D=custom&sfm%5BresponseDate%5D%5BstartDate%5D={date}"
     # updated_date:  "sfm%5BupdatedDate%5D%5Btype%5D=custom&sfm%5BupdatedDate%5D%5BstartDate%5D={date}"
 

@@ -36,6 +36,7 @@ import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from bs4 import BeautifulSoup
@@ -207,18 +208,47 @@ class SAMGovScraper:
         page N and hasn't silently redirected back to page 1.
 
         SAM.gov (Angular SPA) redirects to page 1 when the requested page
-        is beyond the result set.  We detect this by reading the pagination
-        widget ("1 of 122" input box) and the URL.
+        is beyond the result set.
 
-        We retry up to 3 times with a 1-second gap because Angular can take
-        a moment to update the widget after routing completes.
+        Strategy order (most reliable → least):
+          1. Python URL check  – driver.current_url always reflects the
+             address bar instantly; if Angular redirected us the URL will
+             show page=1 not page=N.  This check is instantaneous and
+             doesn't depend on Angular rendering anything.
+          2. Pagination widget – retry up to 5 times with 2-second gaps
+             (total 10 s) so Angular has plenty of time to update the
+             "N of Total" input box after routing completes.
 
-        Returns True (keep going) when:
-          • pagination widget shows expected_page, OR
-          • no pagination widget found (single-page result set).
-        Returns False when SAM.gov consistently shows a different page
-        (genuine end of results).
+        Returns True  when we are confirmed to be on expected_page, OR
+                       when neither check can make a determination (give
+                       benefit of the doubt and continue).
+        Returns False when both checks consistently show a different page
+                       (genuine end of results / SAM.gov redirect detected).
         """
+        # ── Step 1: URL check (instant – no Angular wait needed) ────────
+        # Angular updates window.location immediately on routing.  If
+        # SAM.gov redirected ?page=N → ?page=1, the URL already shows it.
+        try:
+            current_url = self.driver.current_url
+            url_m = re.search(r"[?&]page=(\d+)", current_url)
+            if url_m:
+                url_page = int(url_m.group(1))
+                if url_page == expected_page:
+                    return True   # URL confirms correct page
+                # URL shows wrong page — but Angular might still be mid-
+                # route (rare).  Fall through to widget check with retries
+                # before declaring end-of-results.
+                logger.debug(
+                    f"URL shows page={url_page}, expected {expected_page}; "
+                    f"checking widget before deciding."
+                )
+        except Exception:
+            pass   # can't read URL → continue to widget check
+
+        # ── Step 2: Pagination widget with retries ───────────────────────
+        # Read the "current page" input inside SAM.gov's sds-pagination
+        # component.  Angular can lag several seconds after navigation, so
+        # we retry up to 5 times with 2-second gaps (max 10 s total).
         _JS_PAGE = """
             var selectors = [
                 'sds-pagination input[type="number"]',
@@ -233,25 +263,27 @@ class SAMGovScraper:
                     if (!isNaN(v) && v > 0) return v;
                 }
             }
+            // Fallback: read page number from the URL inside the browser
             var m = window.location.search.match(/[?&]page=(\\d+)/);
             if (m) return parseInt(m[1], 10);
             return -1;
         """
-        for attempt in range(3):
+        for attempt in range(5):
             try:
                 result = self.driver.execute_script(_JS_PAGE)
                 if result is None or int(result) == -1:
-                    # Widget not found – can't verify, assume correct
+                    # Widget not found – can't verify, give benefit of doubt
                     return True
                 current = int(result)
                 if current == expected_page:
                     return True
-                # Mismatch – wait and retry once before deciding
-                if attempt < 2:
-                    time.sleep(1)
+                # Mismatch – wait before the next retry
+                if attempt < 4:
+                    time.sleep(2)
                     continue
+                # All 5 attempts show the wrong page → genuine redirect
                 logger.info(
-                    f"SAM.gov shows page {current} after {attempt+1} checks, "
+                    f"SAM.gov shows page {current} after {attempt + 1} checks, "
                     f"expected {expected_page} — end of results."
                 )
                 return False
@@ -259,6 +291,84 @@ class SAMGovScraper:
                 return True   # can't read widget → assume still on correct page
 
         return True
+
+    # ------------------------------------------------------------------
+    # Next-page navigation via UI button (SAM.gov SPA requirement)
+    # ------------------------------------------------------------------
+    def _click_next_page(self, current_page: int) -> bool:
+        """
+        Navigate to the next search results page by clicking SAM.gov's own
+        pagination "Next" button (#bottomPagination-nextPage).
+
+        WHY THIS IS REQUIRED
+        ────────────────────
+        SAM.gov is an Angular SPA that uses session-state / cursor-based
+        pagination internally.  Navigating directly to ?page=N (N > 1) via
+        driver.get() always redirects back to page 1 because the browser has
+        no active search session.  Clicking the Next button inside the same
+        browser session preserves that state and correctly loads the next page.
+
+        Returns True  → next page loaded (cards present on the new page)
+        Returns False → button absent, disabled, or no cards rendered
+                        (= genuine end of results, stop the loop)
+        """
+        NEXT_BTN_ID = "bottomPagination-nextPage"
+        results_wait = self._timeouts.get("results_wait", 20)
+
+        # ── Locate the Next button ───────────────────────────────────────
+        try:
+            btn = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.ID, NEXT_BTN_ID))
+            )
+        except Exception:
+            logger.info(
+                f"Next-page button '{NEXT_BTN_ID}' not found after page "
+                f"{current_page} — end of results."
+            )
+            return False
+
+        # ── Check whether the button is disabled ─────────────────────────
+        disabled = (
+            btn.get_attribute("disabled") is not None
+            or btn.get_attribute("aria-disabled") == "true"
+            or "disabled" in (btn.get_attribute("class") or "")
+        )
+        if disabled:
+            logger.info(
+                f"Next-page button is disabled after page {current_page} "
+                f"— end of results."
+            )
+            return False
+
+        # ── Scroll into view and click ───────────────────────────────────
+        self.driver.execute_script("arguments[0].scrollIntoView(true);", btn)
+        time.sleep(0.5)
+        try:
+            btn.click()
+        except Exception:
+            # Fallback to JS click in case element is obscured
+            self.driver.execute_script("arguments[0].click();", btn)
+
+        time.sleep(2)   # give Angular router time to start the transition
+
+        # ── Wait for result cards to appear on the new page ──────────────
+        try:
+            WebDriverWait(self.driver, results_wait).until(
+                lambda d: d.find_elements(
+                    By.CSS_SELECTOR,
+                    self._selectors.get(
+                        "results_container_css",
+                        "sds-search-result-list, .sds-card",
+                    ),
+                )
+            )
+            return True
+        except Exception:
+            logger.info(
+                f"No cards rendered after clicking Next from page {current_page} "
+                f"— end of results."
+            )
+            return False
 
     # ------------------------------------------------------------------
     # Timing helpers
@@ -380,6 +490,19 @@ class SAMGovScraper:
             return date_str
         # Remove  (N)  anywhere in the string, then trim whitespace
         return re.sub(r"\s*\(\d+\)\s*", "", date_str).strip()
+
+    # Date pattern used to validate date fields (e.g. "Mar 17, 2026" or
+    # "Mar 17, 2026 (1)").  If a field value doesn't match this it's treated
+    # as garbage and discarded before falling back to a cleaner extractor.
+    _DATE_PATTERN = re.compile(r"[A-Z][a-z]{2}\s+\d{1,2},\s*\d{4}")
+
+    def _looks_like_date(self, s: str) -> bool:
+        """
+        Return True when s contains a recognisable date token (Mon DD, YYYY).
+        Used to guard date fields against being contaminated with URLs or
+        other non-date text that fallback strategies sometimes return.
+        """
+        return bool(self._DATE_PATTERN.search(s)) if s else False
 
     def _is_valid_title(self, title: str) -> bool:
         """Returns False if the title contains any forbidden keyword."""
@@ -647,29 +770,51 @@ class SAMGovScraper:
             )
 
             # ── Field 6: Updated Date ────────────────────────────────────
-            data["Updated Date"] = self._get_field(
+            _raw_updated = self._get_field(
                 soup, ids.get("updated_date", "updated-date"),
                 self._date_cfg.get("updated_date_card_label", "Updated Date")
             )
-            # Regex fallback: scan visible page text for "Updated Date … Mon DD, YYYY"
-            if not data["Updated Date"]:
-                data["Updated Date"] = self._regex_date_from_page(
-                    "Updated Date"
+            # Guard: if _get_field() returned a URL or other non-date garbage
+            # (happens when fallback strategies match a nearby anchor tag),
+            # discard it and fall back to the targeted date-only regex extractor.
+            if _raw_updated and not self._looks_like_date(_raw_updated):
+                logger.debug(
+                    f"Updated Date fallback returned non-date value "
+                    f"'{_raw_updated[:60]}' – discarding and using regex."
                 )
+                _raw_updated = ""
+            if not _raw_updated:
+                _raw_updated = self._regex_date_from_page("Updated Date")
+            data["Updated Date"] = _raw_updated
 
             # ── Field 7: Date Offers Due ─────────────────────────────────
-            data["Date Offers Due"] = self._get_field(
+            _raw_due = self._get_field(
                 soup, ids.get("date_offers_due", "date-offers-date"), "Date Offers Due"
             )
-            if not data["Date Offers Due"]:
-                data["Date Offers Due"] = self._get_field(
+            if not _raw_due:
+                _raw_due = self._get_field(
                     soup, ids.get("date_offers_due_alt", "offers-due-date"), ""
                 )
+            # Same guard: discard non-date garbage from fallback strategies
+            if _raw_due and not self._looks_like_date(_raw_due):
+                logger.debug(
+                    f"Date Offers Due fallback returned non-date value "
+                    f"'{_raw_due[:60]}' – discarding."
+                )
+                _raw_due = ""
+            data["Date Offers Due"] = _raw_due
 
             # ── Field 8: Published Date ──────────────────────────────────
-            data["Published Date"] = self._get_field(
+            _raw_pub = self._get_field(
                 soup, ids.get("published_date", "published-date"), "Published Date"
             )
+            if _raw_pub and not self._looks_like_date(_raw_pub):
+                logger.debug(
+                    f"Published Date fallback returned non-date value "
+                    f"'{_raw_pub[:60]}' – discarding."
+                )
+                _raw_pub = ""
+            data["Published Date"] = _raw_pub
 
             # ── Field 9: Office ──────────────────────────────────────────
             data["Office"] = self._get_field(
@@ -1271,39 +1416,51 @@ class SAMGovScraper:
 
         while extracted_count < max_records:
             logger.info(f"── Page {page} ──────────────────────────────────────")
-            page_url = self._build_page_url(page)
-            self.driver.get(page_url)
-            time.sleep(2)   # give Angular time to start routing before WebDriverWait
 
-            # ── Wait for SAM.gov to render result cards ──────────────────
-            has_cards = False
-            try:
-                WebDriverWait(
-                    self.driver, self._timeouts.get("results_wait", 20)
-                ).until(
-                    lambda d: d.find_elements(
-                        By.CSS_SELECTOR,
-                        self._selectors.get(
-                            "results_container_css",
-                            "sds-search-result-list, .sds-card",
-                        ),
+            if page == 1:
+                # ── Page 1: navigate directly via URL ────────────────────
+                # Only page 1 can be reached via driver.get().  SAM.gov's
+                # Angular SPA redirects any direct ?page=N (N>1) back to
+                # page 1 because there is no active search session yet.
+                page_url = self._build_page_url(1)
+                self.driver.get(page_url)
+                time.sleep(2)   # Angular routing startup
+
+                # Wait for result cards
+                has_cards = False
+                try:
+                    WebDriverWait(
+                        self.driver, self._timeouts.get("results_wait", 20)
+                    ).until(
+                        lambda d: d.find_elements(
+                            By.CSS_SELECTOR,
+                            self._selectors.get(
+                                "results_container_css",
+                                "sds-search-result-list, .sds-card",
+                            ),
+                        )
                     )
-                )
-                has_cards = True
-            except Exception:
-                pass
+                    has_cards = True
+                except Exception:
+                    pass
 
-            if not has_cards:
-                logger.info(f"Page {page}: no cards rendered — end of results.")
-                break
+                if not has_cards:
+                    logger.info("Page 1: no cards rendered — end of results.")
+                    break
 
-            # ── Verify SAM.gov actually loaded the page we requested ──────
-            # SAM.gov (Angular SPA) can silently redirect to page 1 when the
-            # requested page is beyond the result set.  Detect this by reading
-            # the pagination widget's current-page value.  If it doesn't match
-            # `page`, we've looped back — stop cleanly.
-            if page > 1 and not self._verify_on_correct_page(page):
-                break
+            else:
+                # ── Page 2+: click the Next button to stay in-session ────
+                # We must use the UI button so that SAM.gov's Angular router
+                # knows about the existing session / cursor state.
+                # _click_next_page() blocks until cards appear on the new
+                # page (or returns False when the button is disabled /
+                # missing = genuine end of results).
+                if not self._click_next_page(page - 1):
+                    break
+
+                # Sanity-check: confirm the page indicator matches expectation
+                if not self._verify_on_correct_page(page):
+                    break
 
             # ── Card-level filtering (version / title / Published Date) ─
             candidates = self.get_links_from_current_page()
