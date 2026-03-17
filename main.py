@@ -67,10 +67,8 @@ async def home(request: Request):
 
 @app.post("/scrape_sam")
 async def scrape(body: SamScrapeRequest, session: Session = Depends(get_session)):
-    date_filter = body.date_filter
-
     try:
-        scraper = SAMGovScraper(headless=False, date_filter=date_filter)
+        scraper = SAMGovScraper(headless=False, date_filter=body.date_filter, date_to=body.date_to)
         csv_file = scraper.run(max_records=1000)
 
         if csv_file and os.path.exists(csv_file):

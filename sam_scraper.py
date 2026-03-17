@@ -39,6 +39,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.keys import Keys
 from bs4 import BeautifulSoup
 from webdriver_manager.chrome import ChromeDriverManager
 
@@ -80,27 +81,61 @@ class SAMGovScraper:
     All tuneable values come from config.yml under the 'sam:' key.
     """
 
-    def __init__(self, headless: bool = False, date_filter: str = None):
+    def __init__(
+        self,
+        headless: bool = False,
+        date_filter: str = None,   # kept for backward-compat; treated as date_from
+        date_to: str = None,
+    ):
         self._load_config()
 
-        self.headless = headless
-        self.date_filter = date_filter          # YYYY-MM-DD string from API/CLI
-        self.filter_date_obj = None
-        self.data = []
-        self._output_filename = None   # Fixed once at run() start – prevents multi-file bug
-        self._csv_filepath    = None   # Full Path object; set by _init_csv()
+        self.headless    = headless
+        self.date_filter = date_filter      # YYYY-MM-DD  (from / start of range)
+        self.date_to     = date_to          # YYYY-MM-DD  (to   / end   of range)
 
+        # Parsed datetime objects
+        self.filter_date_from = None        # start of range
+        self.filter_date_to   = None        # end   of range (defaults to today)
+        self.filter_date_obj  = None        # backward-compat alias = filter_date_from
+
+        self.data = []
+        self._output_filename = None
+        self._csv_filepath    = None
+
+        fmt = self._date_cfg.get("filter_date_format", "%Y-%m-%d")
+
+        # ── Parse from-date ──────────────────────────────────────────────
         if self.date_filter:
             try:
-                fmt = self._date_cfg.get("filter_date_format", "%Y-%m-%d")
-                self.filter_date_obj = datetime.strptime(self.date_filter, fmt)
-                logger.info(
-                    f"Date filter active: Published Date = {self.filter_date_obj.strftime('%Y-%m-%d')} (exact match)"
-                )
+                self.filter_date_from = datetime.strptime(self.date_filter, fmt)
+                self.filter_date_obj  = self.filter_date_from   # backward-compat alias
             except Exception as e:
-                logger.warning(
-                    f"Invalid date_filter '{self.date_filter}'. Filter disabled. {e}"
-                )
+                logger.warning(f"Invalid date_filter '{self.date_filter}'. Filter disabled. {e}")
+
+        # ── Parse to-date; default to today if from-date is set ──────────
+        if self.date_to:
+            try:
+                self.filter_date_to = datetime.strptime(self.date_to, fmt)
+            except Exception as e:
+                logger.warning(f"Invalid date_to '{self.date_to}'. Defaulting to today. {e}")
+
+        if self.filter_date_from and self.filter_date_to is None:
+            # No to-date → treat today as the upper bound
+            self.filter_date_to = datetime.now().replace(
+                hour=23, minute=59, second=59, microsecond=0
+            )
+
+        # ── Log the active filter ────────────────────────────────────────
+        if self.filter_date_from:
+            from_str = self.filter_date_from.strftime("%Y-%m-%d")
+            to_str   = self.filter_date_to.strftime("%Y-%m-%d") if self.filter_date_to else "today"
+            if from_str == to_str or (
+                self.filter_date_to and
+                self.filter_date_from.date() == self.filter_date_to.date()
+            ):
+                logger.info(f"Date filter active: Published Date = {from_str} (exact match)")
+            else:
+                logger.info(f"Date range filter active: Published Date {from_str} to {to_str}")
 
         self.setup_driver()
 
@@ -132,8 +167,9 @@ class SAMGovScraper:
         self._field_ids      = self._cfg.get("detail_field_ids", {})
         self._desc_selectors = self._cfg.get("description_selectors", [])
         self._desc_label     = self._cfg.get("description_heading_label", "Description")
-        self._debug_cfg      = self._cfg.get("debug", {})
-        self._url_date_params = self._cfg.get("url_date_params", {})
+        self._debug_cfg           = self._cfg.get("debug", {})
+        self._url_date_params     = self._cfg.get("url_date_params", {})
+        self._date_filter_ui_cfg  = self._cfg.get("date_filter_ui", {})
 
     # ------------------------------------------------------------------
     # Chrome driver
@@ -186,16 +222,37 @@ class SAMGovScraper:
     def _build_page_url(self, page: int) -> str:
         """
         Builds the full search URL for a given page number.
-        If date_filter is set, appends Response Date + Updated Date params
-        so SAM.gov pre-filters results by date on the server side.
+
+        When a date range is active, appends SAM.gov's updatedDate range
+        URL parameters so the server pre-filters results before the browser
+        renders them.  This dramatically reduces the number of pages the
+        scraper needs to click through.
+
+        URL params injected (URL-encoded):
+          sfm[dates][updatedDate][updatedDateFrom] = YYYY-MM-DD   (from)
+          sfm[dates][updatedDate][updatedDateTo]   = YYYY-MM-DD   (to)
         """
         url = self.base_url.format(page=page)
 
-        if self.filter_date_obj and self._url_date_params:
+        if self.filter_date_from:
+            from_iso = self.filter_date_from.strftime("%Y-%m-%d")
+            to_iso   = (
+                self.filter_date_to.strftime("%Y-%m-%d")
+                if self.filter_date_to
+                else datetime.now().strftime("%Y-%m-%d")
+            )
+            # SAM.gov range URL params (URL-encoded bracket notation)
+            url += (
+                f"&sfm%5Bdates%5D%5BupdatedDate%5D%5BupdatedDateFrom%5D={from_iso}"
+                f"&sfm%5Bdates%5D%5BupdatedDate%5D%5BupdatedDateTo%5D={to_iso}"
+            )
+            logger.debug(f"URL date range params appended: {from_iso} -> {to_iso} (page {page})")
+
+        # Legacy single-date extra params (from config url_date_params, if any)
+        elif self.filter_date_obj and self._url_date_params:
             date_iso = self.filter_date_obj.strftime("%Y-%m-%d")
             for param_template in self._url_date_params.values():
                 url += "&" + param_template.format(date=date_iso)
-            logger.debug(f"URL with date params built for page {page}")
 
         return url
 
@@ -371,6 +428,112 @@ class SAMGovScraper:
             return False
 
     # ------------------------------------------------------------------
+    # UI date-range filter
+    # ------------------------------------------------------------------
+    def _apply_ui_date_filters(self) -> bool:
+        """
+        Fill SAM.gov's "Updated Date" range pickers after page 1 has loaded.
+
+        Two strategies are tried for each input field:
+          1. Exact element ID from config  (formly_31_datepicker_updatedDateFrom_1)
+          2. Partial-ID XPath fallback     (any input whose @id contains the key)
+
+        After both fields are filled the method dispatches 'input', 'change',
+        and 'blur' events so Angular's change-detection picks up the new values,
+        then waits for the results list to re-render.
+
+        Returns True if at least the from-date field was filled successfully.
+        """
+        if not self.filter_date_from:
+            return False
+
+        ui_cfg   = self._date_filter_ui_cfg
+        from_id  = ui_cfg.get("from_input_id", "formly_31_datepicker_updatedDateFrom_1")
+        to_id    = ui_cfg.get("to_input_id",   "formly_31_datepicker_updatedDateTo_2")
+        date_fmt = ui_cfg.get("input_date_format", "%m/%d/%Y")
+        wait_sec = ui_cfg.get("apply_wait", 3)
+
+        from_str = self.filter_date_from.strftime(date_fmt)
+        to_str   = (
+            self.filter_date_to.strftime(date_fmt)
+            if self.filter_date_to
+            else datetime.now().strftime(date_fmt)
+        )
+
+        def _fill(input_id: str, date_str: str, key_fragment: str) -> bool:
+            """Locate an input by ID (exact then partial) and type the date."""
+            el = None
+            # Strategy 1: exact ID
+            try:
+                el = WebDriverWait(self.driver, 6).until(
+                    EC.presence_of_element_located((By.ID, input_id))
+                )
+            except Exception:
+                pass
+
+            # Strategy 2: partial-ID XPath (handles dynamic Formly numbering)
+            if el is None:
+                try:
+                    els = self.driver.find_elements(
+                        By.XPATH, f"//input[contains(@id, '{key_fragment}')]"
+                    )
+                    if els:
+                        el = els[0]
+                except Exception:
+                    pass
+
+            if el is None:
+                logger.warning(f"Date filter input not found: id='{input_id}'")
+                return False
+
+            try:
+                self.driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});", el
+                )
+                time.sleep(0.3)
+                el.click()
+                time.sleep(0.2)
+
+                # Clear existing value then type new date
+                el.send_keys(Keys.CONTROL + "a")
+                el.send_keys(Keys.DELETE)
+                el.send_keys(date_str)
+                el.send_keys(Keys.TAB)   # tab out to trigger Angular blur
+                time.sleep(0.3)
+
+                # Dispatch events so Angular's change-detection runs
+                self.driver.execute_script(
+                    """
+                    var e = arguments[0];
+                    ['input','change','blur'].forEach(function(t){
+                        e.dispatchEvent(new Event(t, {bubbles:true}));
+                    });
+                    """,
+                    el,
+                )
+                return True
+            except Exception as exc:
+                logger.debug(f"Error filling date input '{input_id}': {exc}")
+                return False
+
+        from_ok = _fill(from_id, from_str, "updatedDateFrom")
+        to_ok   = _fill(to_id,   to_str,   "updatedDateTo")
+
+        if from_ok:
+            time.sleep(wait_sec)   # wait for Angular to re-render results
+            logger.info(
+                f"UI date filter applied: {from_str} to {to_str} "
+                f"(from={'OK' if from_ok else 'FAIL'}, to={'OK' if to_ok else 'FAIL'})"
+            )
+        else:
+            logger.warning(
+                "Could not fill UI date filter inputs — "
+                "URL params will still apply the server-side range."
+            )
+
+        return from_ok
+
+    # ------------------------------------------------------------------
     # Timing helpers
     # ------------------------------------------------------------------
     def _random_delay(self):
@@ -401,10 +564,14 @@ class SAMGovScraper:
           • No Updated Date is parseable on the page (can't determine → keep going)
           • At least one card has Updated Date >= filter date  (still in window)
         """
-        if not self.filter_date_obj:
+        if not self.filter_date_from:
             return False
 
-        filter_date   = self.filter_date_obj.date()
+        # Stop boundary = start of the range (from-date).
+        # SAM.gov sorts by -modifiedDate. Once every card's Updated Date is
+        # strictly before the from-date, no bid in [from, to] can appear
+        # on any later page — safe to stop.
+        filter_date   = self.filter_date_from.date()
         updated_label = self._date_cfg.get("updated_date_card_label", "Updated Date")
 
         try:
@@ -517,45 +684,44 @@ class SAMGovScraper:
 
     def _matches_published_date(self, date_str: str) -> bool:
         """
-        Returns True only if the extracted Published Date falls on the EXACT
-        calendar day the user supplied as date_filter.
+        Returns True if the extracted Published Date falls within the active
+        date range [filter_date_from, filter_date_to] (both ends inclusive).
 
-        Example: user entered "2026-03-15" → only bids published on Mar 15 2026
-        are kept, regardless of year/month differences.
+        Scenarios:
+          • from == to (exact day)   → same as old exact-match behaviour
+          • from < to  (range)       → any date in the range is accepted
+          • Only from set, no to     → from <= date <= today
+          • No filter active         → always True (keep all bids)
 
         Robustness rules:
-          • No filter set OR date_str is empty → True (keep the bid)
-          • Date found but cannot be parsed    → True (keep to avoid silent drops)
-          • Date parsed successfully           → compare exact calendar day
+          • No filter active OR date_str is empty  → True (keep the bid)
+          • Date string in unrecognised format      → True (keep to avoid silent drops)
+          • Date parsed successfully                → range comparison
         """
-        if not self.filter_date_obj or not date_str:
+        if not self.filter_date_from or not date_str:
             return True     # no filter active, or no date on page → always keep
 
-        # Accept both "Mar 15, 2026" and "Mar  5, 2026" (double-space single digit)
-        pattern = r"([A-Z][a-z]{2}\s+\d{1,2},\s*\d{4})"
-        m = re.search(pattern, date_str)
-        if not m:
-            # Date string present but in an unrecognised format → keep the bid
+        # _parse_any_date handles all formats and returns "Mon D, YYYY" or ""
+        normalised = self._parse_any_date(date_str)
+        if not normalised:
             logger.debug(f"_matches_published_date: unrecognised format '{date_str}' - keeping")
             return True
 
-        # Normalise whitespace before parsing: "Mar  5, 2026" → "Mar 5, 2026"
-        raw = re.sub(r"\s+", " ", m.group(1)).strip()
-
-        # Try the most common format variants
+        raw = re.sub(r"\s+", " ", normalised).strip()
         for fmt in ("%b %d, %Y", "%b %d,%Y", "%b %d, %Y"):
             try:
-                extracted = datetime.strptime(raw, fmt)
-                match = extracted.date() == self.filter_date_obj.date()
-                if not match:
+                extracted = datetime.strptime(raw, fmt).date()
+                from_date = self.filter_date_from.date()
+                to_date   = self.filter_date_to.date() if self.filter_date_to else datetime.now().date()
+                in_range  = from_date <= extracted <= to_date
+                if not in_range:
                     logger.debug(
-                        f"Published Date {extracted.date()} != filter {self.filter_date_obj.date()}"
+                        f"Published Date {extracted} not in range [{from_date}, {to_date}]"
                     )
-                return match
+                return in_range
             except ValueError:
                 continue
 
-        # Parse failed for all formats → keep the bid rather than silently drop
         logger.debug(f"_matches_published_date: could not parse '{raw}' - keeping")
         return True
 
@@ -1667,6 +1833,12 @@ class SAMGovScraper:
                 if not has_cards:
                     logger.info("Page 1: no cards rendered - end of results.")
                     break
+
+                # ── Apply UI date-range filter on the first page load ─────
+                # The URL params already told SAM.gov the date range server-
+                # side; filling the date-picker inputs confirms the filter
+                # in the Angular state so it persists across page clicks.
+                self._apply_ui_date_filters()
 
             else:
                 # ── Page 2+: click the Next button to stay in-session ────
