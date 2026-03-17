@@ -67,25 +67,22 @@ async def home(request: Request):
 
 @app.post("/scrape_sam")
 async def scrape(body: SamScrapeRequest, session: Session = Depends(get_session)):
-    search_query = body.search_query
     date_filter = body.date_filter
 
     try:
-        scraper = SAMGovScraper(
-            headless=False, search_query=search_query, date_filter=date_filter
-        )
+        scraper = SAMGovScraper(headless=False, date_filter=date_filter)
         csv_file = scraper.run(max_records=1000)
 
         if csv_file and os.path.exists(csv_file):
-            # Save scraped data to database
+            # Save scraped data to database (field names match new 9-column schema)
             for item in scraper.data:
                 record = SamBid(
                     notice_id=item.get("Notice ID", ""),
-                    title=item.get("Title", ""),
+                    title=item.get("Notice Title", ""),
                     date_offers_due=item.get("Date Offers Due", ""),
                     published_date=item.get("Published Date", ""),
                     updated_date=item.get("Updated Date", ""),
-                    inactive_dates=item.get("Inactive Dates", ""),
+                    inactive_dates=item.get("Office", ""),   # Office stored in inactive_dates col
                 )
                 session.add(record)
             session.commit()

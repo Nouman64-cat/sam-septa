@@ -7,7 +7,6 @@ from pydantic import BaseModel
 # ── Request body schemas (used by FastAPI endpoints / Swagger UI) ──────────────
 
 class SamScrapeRequest(BaseModel):
-    search_query: str = ""
     date_filter: Optional[str] = None
 
 

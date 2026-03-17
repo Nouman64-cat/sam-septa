@@ -1,65 +1,54 @@
 # ==============================================================================
-# Shared URLs for all scrapers
+# Shared base URLs for all scrapers
 # ==============================================================================
 urls:
   septa:
     base_url: "https://epsadmin.septa.org/vendor/login/"
 
+  sam:
+    # {page} is the only placeholder – substituted at runtime via str.format(page=N)
+    # Set-asides: NONE, SBA, 8A, SDVOSBC, WOSB, SBP (Partial Small Business – FAR 19.5)
+    # Date params (Response Date + Updated Date) are appended dynamically from user input.
+    # sfm[status][is_active]=true has been REMOVED so that searches on past
+    # dates return results.  With is_active=true, SAM.gov silently filters out
+    # all expired/closed bids, producing zero results for any date older than
+    # the current response-deadline window.
+    base_url: "https://sam.gov/search/?page={page}&pageSize=100&sort=-modifiedDate&index=opp&sfm%5BsetAside%5D%5B0%5D%5Bkey%5D=NONE&sfm%5BsetAside%5D%5B0%5D%5Bvalue%5D=No%20Set%20aside%20used&sfm%5BsetAside%5D%5B1%5D%5Bkey%5D=SBA&sfm%5BsetAside%5D%5B1%5D%5Bvalue%5D=Total%20Small%20Business%20Set-Aside%20(FAR%2019.5)&sfm%5BsetAside%5D%5B2%5D%5Bkey%5D=8A&sfm%5BsetAside%5D%5B2%5D%5Bvalue%5D=8(a)%20Set-Aside%20(FAR%2019.8)&sfm%5BsetAside%5D%5B3%5D%5Bkey%5D=SDVOSBC&sfm%5BsetAside%5D%5B3%5D%5Bvalue%5D=Service-Disabled%20Veteran-Owned%20Small%20Business%20(SDVOSB)%20Set-Aside%20(FAR%2019.14)&sfm%5BsetAside%5D%5B4%5D%5Bkey%5D=WOSB&sfm%5BsetAside%5D%5B4%5D%5Bvalue%5D=SBA%20Certified%20Women-Owned%20Small%20Business%20(WOSB)%20Program%20Set-Aside%20(FAR%2019.15)&sfm%5BsetAside%5D%5B5%5D%5Bkey%5D=SBP&sfm%5BsetAside%5D%5B5%5D%5Bvalue%5D=Partial%20Small%20Business%20Set-Aside%20(FAR%2019.5)&sfm%5BtypeOfNotice%5D%5B0%5D%5Bkey%5D=o&sfm%5BtypeOfNotice%5D%5B0%5D%5Bvalue%5D=Solicitation&sfm%5BtypeOfNotice%5D%5B1%5D%5Bkey%5D=k&sfm%5BtypeOfNotice%5D%5B1%5D%5Bvalue%5D=Combined%20Synopsis%2FSolicitation"
+
+
 # ==============================================================================
-# SEPTA Scraper – all tuneable settings (no credentials here, those stay in .env)
+# SEPTA Scraper – all tuneable settings (credentials stay in .env)
 # ==============================================================================
 septa:
 
-  # --------------------------------------------------------------------------
-  # Logging
-  # --------------------------------------------------------------------------
   logging:
     log_file: "septa_scraper.log"
 
-  # --------------------------------------------------------------------------
-  # Browser / Chrome options
-  # --------------------------------------------------------------------------
   browser:
     window_size: "1920,1080"
     user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    disable_images: true          # set images pref to 2 for faster loading
+    disable_images: true
 
-  # --------------------------------------------------------------------------
-  # Timeouts (seconds)
-  # --------------------------------------------------------------------------
   timeouts:
-    element_wait: 30              # default WebDriverWait for presence checks
-    clickable_wait: 30            # WebDriverWait for element_to_be_clickable
-    login_redirect_wait: 15       # wait for post-login URL change
-    navigation_sleep: 3           # sleep after clicking a nav link
-    search_result_wait: 20        # wait for data table after clicking Search
-    date_field_wait: 5            # wait for search button on filter page
-    next_page_wait: 10            # wait for staleness of next-page button
-    page_change_sleep: 2          # sleep between paginated pages
+    element_wait: 30
+    clickable_wait: 30
+    login_redirect_wait: 15
+    navigation_sleep: 3
+    search_result_wait: 20
+    date_field_wait: 5
+    next_page_wait: 10
+    page_change_sleep: 2
 
-  # --------------------------------------------------------------------------
-  # Scraping limits
-  # --------------------------------------------------------------------------
   scraping:
-    max_pages: 50                 # safety cap – stops infinite pagination loops
+    max_pages: 50
 
-  # --------------------------------------------------------------------------
-  # CSV output
-  # --------------------------------------------------------------------------
   csv:
     prefix: "septa_quotes_"
     timestamp_format: "%Y%m%d_%H%M%S"
 
-  # --------------------------------------------------------------------------
-  # WebDriver Manager – driver cache
-  # --------------------------------------------------------------------------
   wdm:
-    # Relative to Path.home(); glob pattern used to find cached chromedriver.exe
     cache_pattern: ".wdm/drivers/chromedriver/**/chromedriver.exe"
 
-  # --------------------------------------------------------------------------
-  # Navigation – texts / href fragments used to find the Open Quotes section
-  # --------------------------------------------------------------------------
   navigation:
     open_quotes_link_texts:
       - "View Open Quotes"
@@ -72,24 +61,17 @@ septa:
       - "openquote"
       - "OpenQuote"
 
-    # Keywords that confirm we landed on the Open Quotes page
     open_quotes_page_keywords:
       - "open quote"
       - "open quotes"
 
-    # Keywords used when exploring menu structure as a last resort
     menu_procurement_keywords:
       - "procurement"
       - "quote"
       - "bid"
       - "tender"
 
-  # --------------------------------------------------------------------------
-  # XPath / CSS selectors  (single-quoted attr values inside double-quoted YAML)
-  # --------------------------------------------------------------------------
   selectors:
-
-    # -- Login page ----------------------------------------------------------
     username_xpath: "//input[contains(@id, 'Username') or contains(@name, 'Username') or contains(@id, 'User') or contains(@name, 'User') or contains(@id, 'email') or contains(@name, 'email') or @type='email']"
     username_label_xpath: "//label[contains(text(), 'Login ID') or contains(text(), 'User')]/following::input[1]"
     username_fallback_css: "input[type='text']"
@@ -102,16 +84,12 @@ septa:
     logout_xpath: "//a[contains(@href, 'logout')]"
     login_error_xpath: "//*[contains(text(), 'Invalid') or contains(text(), 'Failed')]"
 
-    # -- Date filter ---------------------------------------------------------
-    # Includes the known ASP.NET control ID plus generic fallbacks
     date_input_xpath: "//*[@id='ctl00_ctl00_masterMain_cntMain_ctl00_txtOpensStartDate'] | //input[contains(@name, 'txtOpensStartDate')] | //input[contains(@id, 'OpenDate') or contains(@name, 'OpenDate') or contains(@id, 'FromDate') or contains(@name, 'FromDate') or contains(@id, 'StartDate') or contains(@name, 'StartDate')] | //input[contains(@class, 'date') and not(contains(@id, 'Close')) and not(contains(@id, 'End'))]"
 
     search_btn_xpath: "//a[contains(text(), 'Search') or contains(text(), 'SEARCH')] | //a[contains(@id, 'Search') or contains(@id, 'btnSearch')] | //button[contains(text(), 'Search') or contains(text(), 'SEARCH')] | //input[@value='Search' or @value='SEARCH' or @type='submit'] | //*[@id='searchButton'] | //*[contains(@class, 'search-btn')]"
 
-    # XPath to wait for after clicking Search (confirms results loaded)
     data_table_wait_xpath: "//table[contains(@class, 'data') or contains(@class, 'table') or @id]"
 
-    # -- Data table (ordered by preference) ---------------------------------
     table_selectors:
       - "//table[contains(@class, 'data') or contains(@class, 'table')]"
       - "//table[@id]"
@@ -119,7 +97,6 @@ septa:
       - "//div[contains(@class, 'table')]//table"
       - "//*[@role='table' or @role='grid']"
 
-    # -- Pagination (ordered by preference) ---------------------------------
     next_page_selectors:
       - "//a[contains(text(), 'Next')]"
       - "//a[contains(text(), 'next')]"
@@ -129,6 +106,215 @@ septa:
       - "//a[contains(@id, 'btnNext')]"
       - "//a[contains(@id, 'Next')]"
 
-    # -- Open Quotes page detection -----------------------------------------
     open_quotes_search_xpath: "//button[contains(text(), 'Search')]"
     open_quotes_date_placeholder_xpath: "//input[contains(@placeholder, 'Date')]"
+
+
+# ==============================================================================
+# SAM.gov Scraper – all tuneable settings
+# ==============================================================================
+sam:
+
+  logging:
+    log_file: "sam_scraper.log"
+    format: "%(asctime)s - %(levelname)s - %(message)s"
+
+  # --------------------------------------------------------------------------
+  # Browser / Chrome options
+  # --------------------------------------------------------------------------
+  browser:
+    user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+  # --------------------------------------------------------------------------
+  # Timing / waits (seconds)
+  # --------------------------------------------------------------------------
+  timeouts:
+    page_load_wait: 30
+    page_load_sleep: 2
+    results_wait: 25
+    delay_min: 2
+    delay_max: 4
+
+  # --------------------------------------------------------------------------
+  # Scraping limits
+  # --------------------------------------------------------------------------
+  scraping:
+    max_records: 1000           # default maximum records to collect per run
+    save_interval: 10           # save CSV every N extracted records
+    # How many consecutive pages with 0 new records before the scraper gives up.
+    # Keep this high (8+) because Published Date filtering at card level can
+    # leave many pages empty while valid bids still exist on later pages.
+    max_empty_pages: 8
+
+  # --------------------------------------------------------------------------
+  # URL date param templates – appended to base_url when date_filter is provided.
+  # {date} is replaced at runtime with YYYY-MM-DD from the user's input.
+  #
+  # posted_date  → filters SAM.gov results to bids PUBLISHED on exactly that
+  #               day (startDate = endDate = user's date).  This is the primary
+  #               filter that makes Published Date in the output match what the
+  #               user entered.
+  #
+  # response_date → additionally restricts to bids whose deadline is >= that
+  #                date so we only see still-relevant solicitations.
+  #
+  # updated_date  → additionally restricts by last-updated date (pairs with
+  #                the version-count rule applied client-side).
+  # --------------------------------------------------------------------------
+  url_date_params:
+    posted_date:   "sfm%5BpostedDate%5D%5Btype%5D=custom&sfm%5BpostedDate%5D%5BstartDate%5D={date}&sfm%5BpostedDate%5D%5BendDate%5D={date}"
+    # response_date: "sfm%5BresponseDate%5D%5Btype%5D=custom&sfm%5BresponseDate%5D%5BstartDate%5D={date}"
+    # updated_date:  "sfm%5BupdatedDate%5D%5Btype%5D=custom&sfm%5BupdatedDate%5D%5BstartDate%5D={date}"
+
+  # --------------------------------------------------------------------------
+  # Content filtering (applied at card / search-results level)
+  # --------------------------------------------------------------------------
+  filtering:
+    # Titles containing any of these keywords (case-insensitive) are skipped
+    forbidden_titles:
+      - "rfi"
+      - "market research"
+      - "foods"
+      - "meal"
+      - "survey"
+
+    # Keep only bids whose version/amendment count is 0 or 1.
+    # A bid is skipped when (N) in the Updated Date string and N > version_count_threshold.
+    # No (N) present = version 0 → always kept.
+    version_count_threshold: 1
+
+  # --------------------------------------------------------------------------
+  # Skip conditions (applied at detail-page level after field extraction)
+  # --------------------------------------------------------------------------
+  skip_conditions:
+    # Bid is skipped if Department/Ind. Agency contains any of these (case-insensitive)
+    # Covers full name, abbreviation, and British spelling variants.
+    department_skip_terms:
+      - "department of defense"
+      - "department of defence"
+      - "dept of defense"
+      - "dept of defence"
+      - "dept of def"
+
+    # Bid is skipped if Subtier contains any of these (case-insensitive)
+    subtier_skip_terms:
+      - "department of defense"
+      - "department of defence"
+      - "dept of defense"
+      - "dept of defence"
+
+    # Bid is skipped if Office contains any of these (case-insensitive)
+    office_skip_terms:
+      - "dla"
+      - "defense logistics agency"
+
+  # --------------------------------------------------------------------------
+  # Date parsing
+  # --------------------------------------------------------------------------
+  date_parsing:
+    # strptime format for dates found inside card/detail text (e.g. "Dec 18, 2025")
+    card_date_format: "%b %d, %Y"
+    # Regex used to extract a date string from card text
+    card_date_regex: "([A-Z][a-z]{2}\\s\\d{1,2},\\s\\d{4})"
+    # strptime format for the date_filter value coming in from the API/UI
+    filter_date_format: "%Y-%m-%d"
+    # Card text label that precedes the updated date value
+    updated_date_card_label: "Updated Date"
+    # Card text label that precedes the published date value (used for card-level filter)
+    published_date_card_label: "Published Date"
+
+  # --------------------------------------------------------------------------
+  # CSS / element selectors for the search results list page
+  # --------------------------------------------------------------------------
+  selectors:
+    # Used in WebDriverWait to detect that results have loaded
+    results_container_css: "sds-search-result-list, .sds-card, sds-card, .usa-card, [role='listitem']"
+
+    # Tried in order until cards are found
+    card_selectors:
+      - "sds-search-result-list > div"
+      - ".sds-card"
+      - "sds-card"
+      - "div[class*='sds-card']"
+      - ".usa-card"
+      - "[role='listitem']"
+
+    # Tried in order to find the title/link inside each card
+    title_selectors:
+      - "a.word-break-all"
+      - "a.usa-link"
+      - "h3 a"
+      - ".sds-card__title a"
+
+    # Fallback: minimum text length a link must have to be considered a title
+    title_min_length: 10
+
+    # Substring that must appear in a fallback link's href
+    title_href_contains: "opp"
+
+  # --------------------------------------------------------------------------
+  # HTML element IDs on SAM.gov opportunity detail pages
+  # --------------------------------------------------------------------------
+  detail_field_ids:
+    notice_id:              "notice-id"
+    department_agency:      "department-ind-agency"
+    sub_tier:               "sub-tier"
+    office:                 "office"
+    # Verified from browser dev tools – the correct DOM ID is "date-offers-date"
+    date_offers_due:        "date-offers-date"
+    date_offers_due_alt:    "response-date"       # kept as secondary fallback
+    published_date:         "published-date"
+    inactive_dates:         "inactive-dates"
+    updated_date:           "updated-date"
+
+  # --------------------------------------------------------------------------
+  # Description extraction – CSS selectors tried in order on detail pages
+  # --------------------------------------------------------------------------
+  description_selectors:
+    # Verified from browser dev tools – the actual DOM ID is "desc"
+    - "#desc"
+    - "#desc .usa-prose"
+    - "#desc p"
+    # Legacy / fallback selectors kept in case SAM.gov changes its DOM
+    - "sam-display-description .usa-prose"
+    - "sam-display-description"
+    - "#description .usa-prose"
+    - "#description"
+    - ".description-body"
+    - "div.usa-prose"
+    - "[data-entity='description'] .body"
+    - "div[class*='description']"
+
+  # Text heading label used as a last-resort fallback to locate description
+  description_heading_label: "Description"
+
+  # --------------------------------------------------------------------------
+  # CSV output
+  # --------------------------------------------------------------------------
+  csv:
+    # Directory where all CSV files are saved (created automatically if missing).
+    # Relative paths are resolved from the project root (where config.yml lives).
+    output_dir: "sam_output"
+    # Dynamic filename: sam-YYYY-MM-DD & H-MMam/pm.csv  (no static name)
+    filename_prefix: "sam-"
+    backup_prefix: "sam-backup-"
+    timestamp_format: "%Y%m%d_%H%M%S"
+    # Column order matches the 9 required extraction fields
+    columns:
+      - "Notice Title"
+      - "Notice ID"
+      - "Department/Ind. Agency"
+      - "Description"
+      - "Subtier"
+      - "Updated Date"
+      - "Date Offers Due"
+      - "Published Date"
+      - "Office"
+
+  # --------------------------------------------------------------------------
+  # Debug file names (written when scraping fails / timeouts occur)
+  # --------------------------------------------------------------------------
+  debug:
+    timeout_file: "debug_search_timeout.html"
+    no_cards_file: "debug_no_cards.html"
+    error_file: "debug_error.html"
