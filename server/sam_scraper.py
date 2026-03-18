@@ -102,6 +102,8 @@ class SAMGovScraper:
         self._output_filename = None
         self._csv_filepath    = None
         self._stop_event      = None   # optional threading.Event for graceful stop
+        self.skip_csv         = False  # set True to skip all file I/O (DB-only mode)
+        self._on_bid_extracted = None  # optional callback(dict) — called per saved bid
 
         fmt = self._date_cfg.get("filter_date_format", "%Y-%m-%d")
 
@@ -1782,11 +1784,12 @@ class SAMGovScraper:
         if max_records is None:
             max_records = self._scraping.get("max_records", 1000)
 
-        # ── Generate filename once, then create the file with headers NOW ──
-        #    Rows are written to disk instantly via _append_row() so the file
-        #    always contains all scraped data even if the script is stopped.
+        # ── Generate filename / init CSV (skipped in DB-only mode) ───────────
         self._output_filename = self.get_csv_filename()
-        self._csv_filepath    = self._init_csv()   # file exists on disk from this point
+        if self.skip_csv:
+            self._csv_filepath = None   # no file I/O — data goes to DB via callback
+        else:
+            self._csv_filepath = self._init_csv()   # file exists on disk from this point
 
         extracted_count     = 0
         page                = 1
@@ -1937,11 +1940,18 @@ class SAMGovScraper:
 
                 if details:
                     self.data.append(details)
-                    self._append_row(details)   
+                    if not self.skip_csv:
+                        self._append_row(details)
+                    if self._on_bid_extracted:
+                        try:
+                            self._on_bid_extracted(details)
+                        except Exception as _cb_err:
+                            logger.warning(f"on_bid_extracted callback failed: {_cb_err}")
                     scraped_urls.add(bid_url)
                     scraped_titles.add(bid_title)
                     extracted_count += 1
-                    logger.info(f"[OK] {extracted_count} rows saved -> {self._csv_filepath.name}")
+                    _dest = self._csv_filepath.name if self._csv_filepath else "database"
+                    logger.info(f"[OK] {extracted_count} rows saved -> {_dest}")
 
             page += 1
 
