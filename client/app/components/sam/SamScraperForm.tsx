@@ -9,19 +9,23 @@ import { stopJob } from "../../services/jobService";
 import { exportSam } from "../../services/exportService";
 import { useJobPoller } from "../../hooks/useJobPoller";
 import { useToast } from "../../context/ToastContext";
+import { useSamScraper } from "../../context/SamScraperContext";
 import { validateDateRange, describeDateScenario } from "../../utils/dateUtils";
-import type { ScraperState, JobStatusResponse } from "../../types";
+import type { JobStatusResponse } from "../../types";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const INITIAL: ScraperState = { status: "idle" };
-
 export function SamScraperForm() {
-  const [dateFrom, setDateFrom]     = useState("");
-  const [dateTo, setDateTo]         = useState("");
+  // Persistent state from context (survives page navigation)
+  const { state, setState, dateFrom, setDateFrom, dateTo, setDateTo, reset } =
+    useSamScraper();
+
+  // Transient UI-only state (no need to persist)
   const [rangeError, setRangeError] = useState<string | null>(null);
-  const [state, setState]           = useState<ScraperState>(INITIAL);
-  const [stopping, setStopping]     = useState(false);
+  const [stopping,   setStopping]   = useState(false);
+
+  // Prevent selecting future dates
+  const today = new Date().toISOString().split("T")[0];
 
   const { toast } = useToast();
 
@@ -49,7 +53,7 @@ export function SamScraperForm() {
         }
       }
     },
-    [toast],
+    [setState, toast],
   );
 
   useJobPoller(state.jobId, { onStatusUpdate: handleStatusUpdate });
@@ -108,10 +112,8 @@ export function SamScraperForm() {
   }
 
   function handleReset() {
-    setState(INITIAL);
+    reset();
     setStopping(false);
-    setDateFrom("");
-    setDateTo("");
     setRangeError(null);
   }
 
@@ -152,6 +154,7 @@ export function SamScraperForm() {
                   type="date"
                   value={dateFrom}
                   onChange={handleFromChange}
+                  max={today}
                   hint="Start of range"
                 />
                 <Input
@@ -160,6 +163,7 @@ export function SamScraperForm() {
                   type="date"
                   value={dateTo}
                   onChange={handleToChange}
+                  max={today}
                   hint="Defaults to today"
                 />
               </div>
