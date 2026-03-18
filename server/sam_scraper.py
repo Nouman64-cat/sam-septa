@@ -248,6 +248,8 @@ class SAMGovScraper:
             url += (
                 f"&sfm%5Bdates%5D%5BupdatedDate%5D%5BupdatedDateFrom%5D={from_iso}"
                 f"&sfm%5Bdates%5D%5BupdatedDate%5D%5BupdatedDateTo%5D={to_iso}"
+                f"&sfm%5Bdates%5D%5BresponseDue%5D%5BresponseDueFrom%5D={from_iso}"
+                f"&sfm%5Bdates%5D%5BresponseDue%5D%5BresponseDueTo%5D={to_iso}"
             )
             logger.debug(f"URL date range params appended: {from_iso} -> {to_iso} (page {page})")
 
@@ -435,7 +437,8 @@ class SAMGovScraper:
     # ------------------------------------------------------------------
     def _apply_ui_date_filters(self) -> bool:
         """
-        Fill SAM.gov's "Updated Date" range pickers after page 1 has loaded.
+        Fill SAM.gov's "Updated Date" and "Response/Date Offers Due" range
+        pickers after page 1 has loaded, using the same from/to date range.
 
         Two strategies are tried for each input field:
           1. Exact element ID from config  (formly_31_datepicker_updatedDateFrom_1)
@@ -445,7 +448,7 @@ class SAMGovScraper:
         and 'blur' events so Angular's change-detection picks up the new values,
         then waits for the results list to re-render.
 
-        Returns True if at least the from-date field was filled successfully.
+        Returns True if at least the Updated Date from-date field was filled.
         """
         if not self.filter_date_from:
             return False
@@ -519,14 +522,26 @@ class SAMGovScraper:
                 logger.debug(f"Error filling date input '{input_id}': {exc}")
                 return False
 
+        # --- Updated Date pickers ---
         from_ok = _fill(from_id, from_str, "updatedDateFrom")
         to_ok   = _fill(to_id,   to_str,   "updatedDateTo")
+
+        # --- Response / Date Offers Due pickers (same date range) ---
+        resp_from_id = ui_cfg.get(
+            "resp_due_from_input_id", "formly_25_datepicker_responseDueFrom_1"
+        )
+        resp_to_id = ui_cfg.get(
+            "resp_due_to_input_id", "formly_25_datepicker_responseDueTo_2"
+        )
+        resp_from_ok = _fill(resp_from_id, from_str, "responseDueFrom")
+        resp_to_ok   = _fill(resp_to_id,   to_str,   "responseDueTo")
 
         if from_ok:
             time.sleep(wait_sec)   # wait for Angular to re-render results
             logger.info(
-                f"UI date filter applied: {from_str} to {to_str} "
-                f"(from={'OK' if from_ok else 'FAIL'}, to={'OK' if to_ok else 'FAIL'})"
+                f"UI date filters applied: {from_str} → {to_str} | "
+                f"updatedDate(from={'OK' if from_ok else 'FAIL'}, to={'OK' if to_ok else 'FAIL'}) | "
+                f"responseDue(from={'OK' if resp_from_ok else 'FAIL'}, to={'OK' if resp_to_ok else 'FAIL'})"
             )
         else:
             logger.warning(
@@ -926,12 +941,68 @@ class SAMGovScraper:
                     try:
                         card_text = card.text
 
-                        # Updated Date
-                        if updated_label in card_text:
+                        # Updated Date – prefer DOM element with sds-field__value
+                        # so we get the exact text SAM.gov renders for that field
+                        # rather than a raw text-split that can bleed into the
+                        # next label.
+                        updated_date = ""
+                        try:
+                            lbl_els = card.find_elements(
+                                By.XPATH,
+                                f".//*[contains(@class,'sds-field__label') and "
+                                f"normalize-space(text())='{updated_label}']",
+                            )
+                            for lbl in lbl_els:
+                                # Strategy A: following-sibling sds-field__value
+                                try:
+                                    val_el = lbl.find_element(
+                                        By.XPATH,
+                                        "following-sibling::*[contains(@class,'sds-field__value')]",
+                                    )
+                                    t = val_el.text.strip()
+                                    if t:
+                                        updated_date = t
+                                        break
+                                except Exception:
+                                    pass
+                                # Strategy B: parent → sds-field__value sibling
+                                if not updated_date:
+                                    try:
+                                        val_el = lbl.find_element(
+                                            By.XPATH,
+                                            "../*[contains(@class,'sds-field__value')]",
+                                        )
+                                        t = val_el.text.strip()
+                                        if t:
+                                            updated_date = t
+                                            break
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                        # Fallback: plain text-split if DOM strategies failed
+                        if not updated_date and updated_label in card_text:
                             updated_date = (
                                 card_text.split(updated_label)[1]
                                 .strip().split("\n")[0].strip()
                             )
+
+                        # ── Bid Repeat Count ──────────────────────────────
+                        # SAM.gov shows a repeat/amendment count as an <a>
+                        # element with class "ng-star-inserted" and text
+                        # matching "(N)" (e.g. "(2)").  Default is 0.
+                        bid_repeat_count = 0
+                        try:
+                            count_els = card.find_elements(
+                                By.CSS_SELECTOR, "a.ng-star-inserted"
+                            )
+                            for ce in count_els:
+                                m = re.match(r"^\((\d+)\)$", ce.text.strip())
+                                if m:
+                                    bid_repeat_count = int(m.group(1))
+                                    break
+                        except Exception:
+                            pass
 
                         # ── Published Date: CSS class extraction ──────────
                         # SAM.gov uses class "sds-field__value0" (and the un-
@@ -1051,10 +1122,11 @@ class SAMGovScraper:
                             continue
 
                     candidates.append({
-                        "url":                       url,
-                        "title":                     title,
+                        "url":                        url,
+                        "title":                      title,
                         "pre_extracted_updated_date": updated_date,
-                        "card_pub_date":             card_pub_date,
+                        "card_pub_date":              card_pub_date,
+                        "bid_repeat_count":           bid_repeat_count,
                     })
 
                 except Exception:
@@ -1069,10 +1141,15 @@ class SAMGovScraper:
     # ------------------------------------------------------------------
     # Detail page – full field extraction
     # ------------------------------------------------------------------
-    def extract_details(self, url: str) -> dict | None:
+    def extract_details(self, url: str, pre_updated_date: str = "") -> dict | None:
         """
         Visit an opportunity detail page and extract all 9 required fields.
         Returns None if any skip condition is triggered.
+
+        pre_updated_date: Updated Date already extracted from the search-results
+        card (sds-field__value).  When provided the method skips the detail-page
+        extraction for that field; the version check was already applied at the
+        card-filter stage.
         """
         data = {
             "Notice Title":           "",
@@ -1136,22 +1213,30 @@ class SAMGovScraper:
             )
 
             # ── Field 6: Updated Date ────────────────────────────────────
-            _raw_updated = self._get_field(
-                soup, ids.get("updated_date", "updated-date"),
-                self._date_cfg.get("updated_date_card_label", "Updated Date")
-            )
-            # Guard: if _get_field() returned a URL or other non-date garbage
-            # (happens when fallback strategies match a nearby anchor tag),
-            # discard it and fall back to the targeted date-only regex extractor.
-            if _raw_updated and not self._looks_like_date(_raw_updated):
+            # Use the value already pulled from the search-results card when
+            # available — it comes from the sds-field__value element and is
+            # more reliable than re-extracting it from the detail page.
+            if pre_updated_date:
+                data["Updated Date"] = self._clean_updated_date(pre_updated_date)
                 logger.debug(
-                    f"Updated Date fallback returned non-date value "
-                    f"'{_raw_updated[:60]}' – discarding and using regex."
+                    f"Updated Date taken from card: {data['Updated Date']}"
                 )
-                _raw_updated = ""
-            if not _raw_updated:
-                _raw_updated = self._regex_date_from_page("Updated Date")
-            data["Updated Date"] = _raw_updated
+            else:
+                # Fall back to detail-page extraction (no card value provided)
+                _raw_updated = self._get_field(
+                    soup, ids.get("updated_date", "updated-date"),
+                    self._date_cfg.get("updated_date_card_label", "Updated Date")
+                )
+                # Guard: discard URL/garbage values returned by fallback strategies
+                if _raw_updated and not self._looks_like_date(_raw_updated):
+                    logger.debug(
+                        f"Updated Date fallback returned non-date value "
+                        f"'{_raw_updated[:60]}' – discarding and using regex."
+                    )
+                    _raw_updated = ""
+                if not _raw_updated:
+                    _raw_updated = self._regex_date_from_page("Updated Date")
+                data["Updated Date"] = _raw_updated
 
             # ── Field 7: Date Offers Due ─────────────────────────────────
             # SAM.gov can show this in many formats depending on the user's
@@ -1913,7 +1998,10 @@ class SAMGovScraper:
 
                 details = None
                 try:
-                    details = self.extract_details(bid_url)
+                    details = self.extract_details(
+                        bid_url,
+                        pre_updated_date=item.get("pre_extracted_updated_date", ""),
+                    )
                 except Exception as _detail_err:
                     _emsg = str(_detail_err).lower()
                     # Browser was closed (manually or due to stop) — exit cleanly
@@ -1939,6 +2027,9 @@ class SAMGovScraper:
                         pass
 
                 if details:
+                    # Attach the card-level repeat count to the detail dict
+                    # so it flows through to the DB callback and CSV row.
+                    details["bid_repeat_count"] = item.get("bid_repeat_count", 0)
                     self.data.append(details)
                     if not self.skip_csv:
                         self._append_row(details)

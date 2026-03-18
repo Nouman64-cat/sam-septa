@@ -204,16 +204,17 @@ async def scrape_sam(body: SamScrapeRequest):
         """Called per extracted bid — inserts to DB and updates live counter."""
         with Session(engine) as s:
             s.add(SamBid(
-                job_id          = job_id,
-                notice_id       = bid.get("Notice ID", ""),
-                title           = bid.get("Notice Title", ""),
-                department      = bid.get("Department/Ind. Agency", ""),
-                subtier         = bid.get("Subtier", ""),
-                office          = bid.get("Office", ""),
-                description     = bid.get("Description", ""),
-                updated_date    = bid.get("Updated Date", ""),
-                date_offers_due = bid.get("Date Offers Due", ""),
-                published_date  = bid.get("Published Date", ""),
+                job_id           = job_id,
+                notice_id        = bid.get("Notice ID", ""),
+                title            = bid.get("Notice Title", ""),
+                department       = bid.get("Department/Ind. Agency", ""),
+                subtier          = bid.get("Subtier", ""),
+                office           = bid.get("Office", ""),
+                description      = bid.get("Description", ""),
+                updated_date     = bid.get("Updated Date", ""),
+                date_offers_due  = bid.get("Date Offers Due", ""),
+                published_date   = bid.get("Published Date", ""),
+                bid_repeat_count = int(bid.get("bid_repeat_count", 0)),
             ))
             s.commit()
         _jobs[job_id]["record_count"] += 1
@@ -331,18 +332,21 @@ async def export_sam(job_id: Optional[str] = Query(default=None)):
     headers = [
         "Notice Title", "Notice ID", "Department/Ind. Agency",
         "Description", "Subtier", "Updated Date",
-        "Date Offers Due", "Published Date", "Office",
+        "Bid Repeat Count", "Date Offers Due", "Published Date", "Office",
     ]
     rows = [
         [
             b.title, b.notice_id, b.department, b.description,
-            b.subtier, b.updated_date, b.date_offers_due, b.published_date,
-            b.office,
+            b.subtier, b.updated_date, b.bid_repeat_count,
+            b.date_offers_due, b.published_date, b.office,
         ]
         for b in bids
     ]
 
-    filename = f"sam_bids_{job_id or 'all'}.xlsx"
+    _now = datetime.now()
+    _hr  = _now.strftime("%I").lstrip("0") or "12"
+    ts   = _now.strftime(f"%Y-%m-%d, {_hr}:%M %p")
+    filename = f"sam_{ts}.xlsx"
     stream   = _styled_workbook("SAM Bids", headers, rows)
     return StreamingResponse(
         stream,
@@ -374,7 +378,10 @@ async def export_septa(job_id: Optional[str] = Query(default=None)):
         for q in quotes
     ]
 
-    filename = f"septa_quotes_{job_id or 'all'}.xlsx"
+    _now = datetime.now()
+    _hr  = _now.strftime("%I").lstrip("0") or "12"
+    ts   = _now.strftime(f"%Y-%m-%d, {_hr}:%M %p")
+    filename = f"septa_{ts}.xlsx"
     stream   = _styled_workbook("SEPTA Quotes", headers, rows)
     return StreamingResponse(
         stream,

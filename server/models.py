@@ -61,12 +61,13 @@ class SamBid(SQLModel, table=True):
     department:      str           = Field(default="", max_length=500)  # Department/Ind. Agency
     subtier:         str           = Field(default="", max_length=500)
     office:          str           = Field(default="", max_length=500)
-    description:     Optional[str] = Field(default="", sa_column=Column(Text))
-    updated_date:    str           = Field(default="", max_length=50)
-    date_offers_due: str           = Field(default="", max_length=50)
-    published_date:  str           = Field(default="", max_length=50)
+    description:      Optional[str] = Field(default="", sa_column=Column(Text))
+    updated_date:     str           = Field(default="", max_length=50)
+    bid_repeat_count: int           = Field(default=0)
+    date_offers_due:  str           = Field(default="", max_length=50)
+    published_date:   str           = Field(default="", max_length=50)
     # ── Metadata ──────────────────────────────────────────────────────────────
-    scraped_at:      datetime      = Field(default_factory=datetime.utcnow)
+    scraped_at:       datetime      = Field(default_factory=datetime.utcnow)
 
 
 # ── SEPTA procurement quotes ───────────────────────────────────────────────────
