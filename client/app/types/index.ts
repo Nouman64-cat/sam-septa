@@ -1,54 +1,58 @@
 // ── API request shapes ─────────────────────────────────────────────────────────
 
 export interface SamScrapeRequest {
-  /** Start of date range – YYYY-MM-DD. Omit for no filter. */
-  date_filter?: string;
-  /** End of date range – YYYY-MM-DD. Omit to default to today. */
-  date_to?: string;
+  date_filter?: string;   // from-date YYYY-MM-DD
+  date_to?: string;       // to-date   YYYY-MM-DD
 }
 
 export interface SeptaScrapeRequest {
-  /** Filter date – YYYY-MM-DD. Omit to scrape all open quotes. */
-  date_filter?: string;
+  date_filter?: string;   // YYYY-MM-DD
 }
 
 // ── Job API shapes ─────────────────────────────────────────────────────────────
 
-/** Returned immediately when POST /scrape_* is called. */
 export interface JobStartResponse {
   success: boolean;
-  /** Present when success === true. Use to poll /status/{job_id}. */
   job_id?: string;
   error?: string;
 }
 
-/** Status string returned by GET /status/{job_id}. */
 export type JobStatus = "running" | "done" | "stopped" | "error";
 
-/** Shape of GET /status/{job_id} response body. */
 export interface JobStatusResponse {
   status: JobStatus;
-  /** Absolute server-side path to the output file once the job finishes. */
-  filename?: string | null;
+  /** Live count of records saved so far (increments per bid for SAM). */
+  record_count: number;
   error?: string | null;
 }
 
-/** Shape of POST /stop/{job_id} response body. */
 export interface StopResponse {
   success: boolean;
   message?: string;
   error?: string;
 }
 
+// ── Scrape job history ────────────────────────────────────────────────────────
+
+export interface ScrapeJobRecord {
+  job_id:        string;
+  scraper:       "sam" | "septa";
+  status:        JobStatus;
+  date_from:     string | null;
+  date_to:       string | null;
+  started_at:    string | null;
+  finished_at:   string | null;
+  record_count:  number;
+  error_message: string | null;
+}
+
 // ── UI state ───────────────────────────────────────────────────────────────────
 
-/** UI-facing status — extends JobStatus with the initial "idle" state. */
 export type ScraperStatus = "idle" | JobStatus;
 
 export interface ScraperState {
-  status: ScraperStatus;
-  /** Active job ID while running or after completion. */
-  jobId?: string;
-  filename?: string;
-  error?: string;
+  status:       ScraperStatus;
+  jobId?:       string;
+  recordCount?: number;
+  error?:       string;
 }

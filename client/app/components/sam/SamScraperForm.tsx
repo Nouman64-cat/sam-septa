@@ -7,13 +7,9 @@ import { Button } from "../ui/Button";
 import { StatusBadge } from "../ui/StatusBadge";
 import { scrapeSam } from "../../services/samService";
 import { stopJob } from "../../services/jobService";
-import { getDownloadUrl } from "../../services/api";
+import { exportSam } from "../../services/exportService";
 import { useJobPoller } from "../../hooks/useJobPoller";
-import {
-  validateDateRange,
-  describeDateScenario,
-} from "../../utils/dateUtils";
-import { triggerDownload, extractFilename } from "../../utils/downloadUtils";
+import { validateDateRange, describeDateScenario } from "../../utils/dateUtils";
 import type { ScraperState, JobStatusResponse } from "../../types";
 
 // ── Scenario reference grid ───────────────────────────────────────────────────
@@ -27,35 +23,28 @@ const SCENARIOS = [
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const INITIAL_STATE: ScraperState = { status: "idle" };
+const INITIAL: ScraperState = { status: "idle" };
 
 export function SamScraperForm() {
   const [dateFrom, setDateFrom]     = useState("");
   const [dateTo, setDateTo]         = useState("");
   const [rangeError, setRangeError] = useState<string | null>(null);
-  const [state, setState]           = useState<ScraperState>(INITIAL_STATE);
+  const [state, setState]           = useState<ScraperState>(INITIAL);
   const [stopping, setStopping]     = useState(false);
 
-  const isRunning = state.status === "running";
-  const isFinished =
-    state.status === "done" ||
-    state.status === "stopped" ||
-    state.status === "error";
+  const isRunning  = state.status === "running";
+  const isFinished = ["done", "stopped", "error"].includes(state.status);
 
   // ── Job polling ────────────────────────────────────────────────────────────
 
   const handleStatusUpdate = useCallback((res: JobStatusResponse) => {
     setState((prev) => ({
       ...prev,
-      status:   res.status,
-      filename: res.filename ?? undefined,
-      error:    res.error   ?? undefined,
+      status:      res.status,
+      recordCount: res.record_count,
+      error:       res.error ?? undefined,
     }));
-    // Keep the Stop button in its loading state until the job actually
-    // finishes — clearing it on every "running" poll would kill the spinner.
-    if (res.status !== "running") {
-      setStopping(false);
-    }
+    if (res.status !== "running") setStopping(false);
   }, []);
 
   useJobPoller(state.jobId, { onStatusUpdate: handleStatusUpdate });
@@ -74,7 +63,6 @@ export function SamScraperForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-
     const err = validateDateRange(dateFrom, dateTo);
     if (err) { setRangeError(err); return; }
 
@@ -85,16 +73,15 @@ export function SamScraperForm() {
         date_filter: dateFrom || undefined,
         date_to:     dateTo   || undefined,
       });
-
       if (res.success && res.job_id) {
-        setState({ status: "running", jobId: res.job_id });
+        setState({ status: "running", jobId: res.job_id, recordCount: 0 });
       } else {
-        setState({ status: "error", error: res.error ?? "Failed to start scraping job." });
+        setState({ status: "error", error: res.error ?? "Failed to start job." });
       }
     } catch (err: unknown) {
       setState({
         status: "error",
-        error:  err instanceof Error ? err.message : "Network error — is the server running?",
+        error: err instanceof Error ? err.message : "Network error — is the server running?",
       });
     }
   }
@@ -102,25 +89,12 @@ export function SamScraperForm() {
   async function handleStop() {
     if (!state.jobId) return;
     setStopping(true);
-    try {
-      await stopJob(state.jobId);
-    } catch {
-      setStopping(false);
-    }
+    try { await stopJob(state.jobId); }
+    catch { setStopping(false); }
   }
 
-  function handleDownload() {
-    if (!state.filename) return;
-    triggerDownload(
-      getDownloadUrl(state.filename),
-      extractFilename(state.filename),
-    );
-  }
-
-  function handleReset() {
-    setState(INITIAL_STATE);
-    setStopping(false);
-  }
+  function handleExport() { exportSam(state.jobId); }
+  function handleReset()  { setState(INITIAL); setStopping(false); }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -131,17 +105,15 @@ export function SamScraperForm() {
         <div>
           <h2 className="text-xl font-bold text-gray-900">SAM.gov Scraper</h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            Collects government bid notices from SAM.gov with optional date
-            range filtering.
+            Collects government bid notices — results saved directly to the database.
           </p>
         </div>
         <StatusBadge status={state.status} />
       </div>
 
-      {/* Form — hidden while a job is active */}
+      {/* ── Form (visible only when idle) ── */}
       {!isRunning && !isFinished && (
         <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-          {/* Date range inputs */}
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4">
             <p className="text-sm font-semibold text-gray-700">
               Date Range Filter{" "}
@@ -169,116 +141,98 @@ export function SamScraperForm() {
 
             {rangeError && (
               <p className="text-sm text-red-600 flex items-center gap-1.5">
-                <span aria-hidden>&#9888;</span>
-                {rangeError}
+                <span aria-hidden>&#9888;</span> {rangeError}
               </p>
             )}
 
             <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
               <span className="font-semibold whitespace-nowrap">Active mode:</span>
-              <span className="font-mono">
-                {describeDateScenario(dateFrom, dateTo)}
-              </span>
+              <span className="font-mono">{describeDateScenario(dateFrom, dateTo)}</span>
             </div>
           </div>
 
           {/* Scenario reference */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {SCENARIOS.map(({ label, desc }) => (
-              <div
-                key={label}
-                className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-center"
-              >
+              <div key={label} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-center">
                 <div className="text-xs font-semibold text-gray-600">{label}</div>
                 <div className="text-xs text-gray-400 mt-0.5">{desc}</div>
               </div>
             ))}
           </div>
 
-          <Button type="submit" className="w-full">
-            Start Scraping
-          </Button>
+          <Button type="submit" className="w-full">Start Scraping</Button>
         </form>
       )}
 
-      {/* Running state — progress card with Stop button */}
+      {/* ── Running state ── */}
       {isRunning && (
         <div className="space-y-4">
-          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-blue-900">
-                  Scraping in progress…
-                </p>
+                <p className="text-sm font-semibold text-blue-900">Scraping in progress…</p>
                 <p className="text-xs text-blue-700 mt-0.5">
-                  A Chrome window is open on the server collecting bids.
-                  This can take several minutes.
+                  Each bid is saved to the database as it is scraped.
                 </p>
               </div>
-              <Button
-                variant="danger"
-                loading={stopping}
-                onClick={handleStop}
-                className="shrink-0"
-              >
+              <Button variant="danger" loading={stopping} onClick={handleStop} className="shrink-0">
                 {stopping ? "Stopping…" : "Stop"}
               </Button>
             </div>
 
+            {/* Live counter */}
+            <div className="mt-3 flex items-center gap-3">
+              <div className="flex-1 h-1.5 rounded-full bg-blue-200 overflow-hidden">
+                <div className="h-full bg-blue-500 animate-pulse w-full" />
+              </div>
+              <span className="text-xs font-mono text-blue-700 whitespace-nowrap">
+                {state.recordCount ?? 0} bids saved
+              </span>
+            </div>
+
             {state.jobId && (
-              <p className="text-xs text-blue-600 font-mono">
-                Job: {state.jobId}
-              </p>
+              <p className="text-xs text-blue-500 font-mono mt-2">Job: {state.jobId}</p>
             )}
           </div>
 
           <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-700">
-            <span className="font-semibold">Tip:</span> Clicking{" "}
-            <strong>Stop</strong> saves all data scraped so far — nothing is
-            lost.
+            <span className="font-semibold">Tip:</span> Stopping saves all bids collected so far — nothing is lost.
           </div>
         </div>
       )}
 
-      {/* Success / stopped panel */}
+      {/* ── Success / stopped ── */}
       {(state.status === "done" || state.status === "stopped") && (
-        <div className="space-y-3">
-          <div className="rounded-xl border border-green-200 bg-green-50 p-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-green-800">
-                  {state.status === "stopped"
-                    ? "Scraping stopped — partial data saved!"
-                    : "Scraping complete!"}
-                </p>
-                {state.filename && (
-                  <p className="text-xs text-green-700 mt-0.5 font-mono truncate">
-                    {extractFilename(state.filename)}
-                  </p>
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-green-800">
+                {state.status === "stopped" ? "Stopped — partial data saved to DB" : "Complete!"}
+              </p>
+              <p className="text-xs text-green-700 mt-0.5">
+                <span className="font-semibold font-mono">{state.recordCount ?? 0}</span> bids
+                saved to the database
+                {state.jobId && (
+                  <span className="text-green-600"> · {state.jobId}</span>
                 )}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {state.filename && (
-                  <Button variant="secondary" onClick={handleDownload}>
-                    Download
-                  </Button>
-                )}
-                <Button variant="ghost" onClick={handleReset}>
-                  New Scrape
-                </Button>
-              </div>
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button variant="secondary" onClick={handleExport}>
+                Export to Excel
+              </Button>
+              <Button variant="ghost" onClick={handleReset}>New Scrape</Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Error panel */}
+      {/* ── Error ── */}
       {state.status === "error" && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4">
           <p className="text-sm font-semibold text-red-800">Scraping failed</p>
-          <p className="mt-1 text-xs text-red-700 font-mono break-all">
-            {state.error}
-          </p>
+          <p className="mt-1 text-xs text-red-700 font-mono break-all">{state.error}</p>
           <button
             onClick={handleReset}
             className="mt-3 text-xs text-red-600 underline hover:no-underline"
