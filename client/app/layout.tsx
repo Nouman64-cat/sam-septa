@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ToastProvider } from "./context/ToastContext";
 import { ToastContainer } from "./components/ui/Toast";
+import { SamScraperProvider } from "./context/SamScraperContext";
+import { SeptaScraperProvider } from "./context/SeptaScraperContext";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -25,13 +27,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="scroll-smooth">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ToastProvider>
-          {children}
-          <ToastContainer />
+          <SamScraperProvider>
+            <SeptaScraperProvider>
+              {children}
+              <ToastContainer />
+            </SeptaScraperProvider>
+          </SamScraperProvider>
         </ToastProvider>
       </body>
     </html>

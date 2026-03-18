@@ -9,18 +9,22 @@ import { stopJob } from "../../services/jobService";
 import { exportSepta } from "../../services/exportService";
 import { useJobPoller } from "../../hooks/useJobPoller";
 import { useToast } from "../../context/ToastContext";
+import { useSeptaScraper } from "../../context/SeptaScraperContext";
 import { isValidDate } from "../../utils/dateUtils";
-import type { ScraperState, JobStatusResponse } from "../../types";
+import type { JobStatusResponse } from "../../types";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const INITIAL: ScraperState = { status: "idle" };
-
 export function SeptaScraperForm() {
-  const [dateFilter, setDateFilter] = useState("");
-  const [dateError, setDateError]   = useState<string | null>(null);
-  const [state, setState]           = useState<ScraperState>(INITIAL);
-  const [stopping, setStopping]     = useState(false);
+  // Persistent state from context (survives page navigation)
+  const { state, setState, dateFilter, setDateFilter, reset } = useSeptaScraper();
+
+  // Transient UI-only state (no need to persist)
+  const [dateError, setDateError] = useState<string | null>(null);
+  const [stopping,  setStopping]  = useState(false);
+
+  // Prevent selecting future dates
+  const today = new Date().toISOString().split("T")[0];
 
   const { toast } = useToast();
 
@@ -48,7 +52,7 @@ export function SeptaScraperForm() {
         }
       }
     },
-    [toast],
+    [setState, toast],
   );
 
   useJobPoller(state.jobId, { onStatusUpdate: handleStatusUpdate });
@@ -99,9 +103,8 @@ export function SeptaScraperForm() {
   }
 
   function handleReset() {
-    setState(INITIAL);
+    reset();
     setStopping(false);
-    setDateFilter("");
     setDateError(null);
   }
 
@@ -141,6 +144,7 @@ export function SeptaScraperForm() {
                 type="date"
                 value={dateFilter}
                 onChange={handleDateChange}
+                max={today}
                 error={dateError ?? undefined}
                 hint="Leave empty to scrape all open quotes"
               />
