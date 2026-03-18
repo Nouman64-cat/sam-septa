@@ -941,12 +941,68 @@ class SAMGovScraper:
                     try:
                         card_text = card.text
 
-                        # Updated Date
-                        if updated_label in card_text:
+                        # Updated Date – prefer DOM element with sds-field__value
+                        # so we get the exact text SAM.gov renders for that field
+                        # rather than a raw text-split that can bleed into the
+                        # next label.
+                        updated_date = ""
+                        try:
+                            lbl_els = card.find_elements(
+                                By.XPATH,
+                                f".//*[contains(@class,'sds-field__label') and "
+                                f"normalize-space(text())='{updated_label}']",
+                            )
+                            for lbl in lbl_els:
+                                # Strategy A: following-sibling sds-field__value
+                                try:
+                                    val_el = lbl.find_element(
+                                        By.XPATH,
+                                        "following-sibling::*[contains(@class,'sds-field__value')]",
+                                    )
+                                    t = val_el.text.strip()
+                                    if t:
+                                        updated_date = t
+                                        break
+                                except Exception:
+                                    pass
+                                # Strategy B: parent → sds-field__value sibling
+                                if not updated_date:
+                                    try:
+                                        val_el = lbl.find_element(
+                                            By.XPATH,
+                                            "../*[contains(@class,'sds-field__value')]",
+                                        )
+                                        t = val_el.text.strip()
+                                        if t:
+                                            updated_date = t
+                                            break
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                        # Fallback: plain text-split if DOM strategies failed
+                        if not updated_date and updated_label in card_text:
                             updated_date = (
                                 card_text.split(updated_label)[1]
                                 .strip().split("\n")[0].strip()
                             )
+
+                        # ── Bid Repeat Count ──────────────────────────────
+                        # SAM.gov shows a repeat/amendment count as an <a>
+                        # element with class "ng-star-inserted" and text
+                        # matching "(N)" (e.g. "(2)").  Default is 0.
+                        bid_repeat_count = 0
+                        try:
+                            count_els = card.find_elements(
+                                By.CSS_SELECTOR, "a.ng-star-inserted"
+                            )
+                            for ce in count_els:
+                                m = re.match(r"^\((\d+)\)$", ce.text.strip())
+                                if m:
+                                    bid_repeat_count = int(m.group(1))
+                                    break
+                        except Exception:
+                            pass
 
                         # ── Published Date: CSS class extraction ──────────
                         # SAM.gov uses class "sds-field__value0" (and the un-
@@ -1066,10 +1122,11 @@ class SAMGovScraper:
                             continue
 
                     candidates.append({
-                        "url":                       url,
-                        "title":                     title,
+                        "url":                        url,
+                        "title":                      title,
                         "pre_extracted_updated_date": updated_date,
-                        "card_pub_date":             card_pub_date,
+                        "card_pub_date":              card_pub_date,
+                        "bid_repeat_count":           bid_repeat_count,
                     })
 
                 except Exception:
@@ -1084,10 +1141,15 @@ class SAMGovScraper:
     # ------------------------------------------------------------------
     # Detail page – full field extraction
     # ------------------------------------------------------------------
-    def extract_details(self, url: str) -> dict | None:
+    def extract_details(self, url: str, pre_updated_date: str = "") -> dict | None:
         """
         Visit an opportunity detail page and extract all 9 required fields.
         Returns None if any skip condition is triggered.
+
+        pre_updated_date: Updated Date already extracted from the search-results
+        card (sds-field__value).  When provided the method skips the detail-page
+        extraction for that field; the version check was already applied at the
+        card-filter stage.
         """
         data = {
             "Notice Title":           "",
@@ -1151,22 +1213,30 @@ class SAMGovScraper:
             )
 
             # ── Field 6: Updated Date ────────────────────────────────────
-            _raw_updated = self._get_field(
-                soup, ids.get("updated_date", "updated-date"),
-                self._date_cfg.get("updated_date_card_label", "Updated Date")
-            )
-            # Guard: if _get_field() returned a URL or other non-date garbage
-            # (happens when fallback strategies match a nearby anchor tag),
-            # discard it and fall back to the targeted date-only regex extractor.
-            if _raw_updated and not self._looks_like_date(_raw_updated):
+            # Use the value already pulled from the search-results card when
+            # available — it comes from the sds-field__value element and is
+            # more reliable than re-extracting it from the detail page.
+            if pre_updated_date:
+                data["Updated Date"] = self._clean_updated_date(pre_updated_date)
                 logger.debug(
-                    f"Updated Date fallback returned non-date value "
-                    f"'{_raw_updated[:60]}' – discarding and using regex."
+                    f"Updated Date taken from card: {data['Updated Date']}"
                 )
-                _raw_updated = ""
-            if not _raw_updated:
-                _raw_updated = self._regex_date_from_page("Updated Date")
-            data["Updated Date"] = _raw_updated
+            else:
+                # Fall back to detail-page extraction (no card value provided)
+                _raw_updated = self._get_field(
+                    soup, ids.get("updated_date", "updated-date"),
+                    self._date_cfg.get("updated_date_card_label", "Updated Date")
+                )
+                # Guard: discard URL/garbage values returned by fallback strategies
+                if _raw_updated and not self._looks_like_date(_raw_updated):
+                    logger.debug(
+                        f"Updated Date fallback returned non-date value "
+                        f"'{_raw_updated[:60]}' – discarding and using regex."
+                    )
+                    _raw_updated = ""
+                if not _raw_updated:
+                    _raw_updated = self._regex_date_from_page("Updated Date")
+                data["Updated Date"] = _raw_updated
 
             # ── Field 7: Date Offers Due ─────────────────────────────────
             # SAM.gov can show this in many formats depending on the user's
@@ -1928,7 +1998,10 @@ class SAMGovScraper:
 
                 details = None
                 try:
-                    details = self.extract_details(bid_url)
+                    details = self.extract_details(
+                        bid_url,
+                        pre_updated_date=item.get("pre_extracted_updated_date", ""),
+                    )
                 except Exception as _detail_err:
                     _emsg = str(_detail_err).lower()
                     # Browser was closed (manually or due to stop) — exit cleanly
@@ -1954,6 +2027,9 @@ class SAMGovScraper:
                         pass
 
                 if details:
+                    # Attach the card-level repeat count to the detail dict
+                    # so it flows through to the DB callback and CSV row.
+                    details["bid_repeat_count"] = item.get("bid_repeat_count", 0)
                     self.data.append(details)
                     if not self.skip_csv:
                         self._append_row(details)

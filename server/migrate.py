@@ -11,6 +11,11 @@ Safe to re-run — uses IF EXISTS so it won't error on missing tables.
 from database import engine, create_db_and_tables
 from sqlalchemy import text
 
+# ── Import all models so SQLModel.metadata knows about every table ────────────
+# Without these imports SQLModel.metadata is empty and create_db_and_tables()
+# will not create any of the application tables.
+import models  # noqa: F401  — side-effect: registers all SQLModel classes
+
 _DROP = """
 DROP TABLE IF EXISTS septa_quotes  CASCADE;
 DROP TABLE IF EXISTS sam_bids      CASCADE;
