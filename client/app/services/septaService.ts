@@ -1,12 +1,13 @@
 import { post } from "./api";
-import type { SeptaScrapeRequest, ScrapeResponse } from "../types";
+import type { SeptaScrapeRequest, JobStartResponse } from "../types";
 
 /**
- * Trigger the SEPTA portal scraper with an optional date filter.
- * Pass an empty object (or omit `date_filter`) to scrape all open quotes.
+ * Start a SEPTA portal scrape in a background job.
+ * Returns a job_id immediately — use jobService to poll status or stop it.
+ * Pass an empty object (or omit date_filter) to scrape all open quotes.
  */
 export async function scrapeSepta(
   params: SeptaScrapeRequest,
-): Promise<ScrapeResponse> {
-  return post<SeptaScrapeRequest, ScrapeResponse>("/scrape_septa", params);
+): Promise<JobStartResponse> {
+  return post<SeptaScrapeRequest, JobStartResponse>("/scrape_septa", params);
 }

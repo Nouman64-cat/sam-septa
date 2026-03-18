@@ -1,26 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Card } from "../ui/Card";
 import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
 import { StatusBadge } from "../ui/StatusBadge";
 import { scrapeSepta } from "../../services/septaService";
+import { stopJob } from "../../services/jobService";
 import { getDownloadUrl } from "../../services/api";
+import { useJobPoller } from "../../hooks/useJobPoller";
 import { isValidDate } from "../../utils/dateUtils";
 import { triggerDownload, extractFilename } from "../../utils/downloadUtils";
-import type { ScraperState } from "../../types";
+import type { ScraperState, JobStatusResponse } from "../../types";
 
-// ── Component ────────────────────────────────────────────────────────────────
+// ── Component ─────────────────────────────────────────────────────────────────
 
 const INITIAL_STATE: ScraperState = { status: "idle" };
 
 export function SeptaScraperForm() {
   const [dateFilter, setDateFilter] = useState("");
-  const [dateError, setDateError] = useState<string | null>(null);
-  const [state, setState] = useState<ScraperState>(INITIAL_STATE);
+  const [dateError, setDateError]   = useState<string | null>(null);
+  const [state, setState]           = useState<ScraperState>(INITIAL_STATE);
+  const [stopping, setStopping]     = useState(false);
 
-  const isRunning = state.status === "running";
+  const isRunning  = state.status === "running";
+  const isFinished =
+    state.status === "done" ||
+    state.status === "stopped" ||
+    state.status === "error";
+
+  // ── Job polling ────────────────────────────────────────────────────────────
+
+  const handleStatusUpdate = useCallback((res: JobStatusResponse) => {
+    setState((prev) => ({
+      ...prev,
+      status:   res.status,
+      filename: res.filename ?? undefined,
+      error:    res.error   ?? undefined,
+    }));
+    // Keep the Stop button in its loading state until the job actually
+    // finishes — clearing it on every "running" poll would kill the spinner.
+    if (res.status !== "running") {
+      setStopping(false);
+    }
+  }, []);
+
+  useJobPoller(state.jobId, { onStatusUpdate: handleStatusUpdate });
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -44,22 +69,26 @@ export function SeptaScraperForm() {
         date_filter: dateFilter || undefined,
       });
 
-      if (res.success && res.filename) {
-        setState({ status: "success", filename: res.filename });
+      if (res.success && res.job_id) {
+        setState({ status: "running", jobId: res.job_id });
       } else {
-        setState({
-          status: "error",
-          error: res.error ?? "Scraping finished but no output file was created.",
-        });
+        setState({ status: "error", error: res.error ?? "Failed to start scraping job." });
       }
     } catch (err: unknown) {
       setState({
         status: "error",
-        error:
-          err instanceof Error
-            ? err.message
-            : "Network error — is the server running?",
+        error:  err instanceof Error ? err.message : "Network error — is the server running?",
       });
+    }
+  }
+
+  async function handleStop() {
+    if (!state.jobId) return;
+    setStopping(true);
+    try {
+      await stopJob(state.jobId);
+    } catch {
+      setStopping(false);
     }
   }
 
@@ -71,8 +100,9 @@ export function SeptaScraperForm() {
     );
   }
 
-  function handleDismiss() {
+  function handleReset() {
     setState(INITIAL_STATE);
+    setStopping(false);
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -90,95 +120,129 @@ export function SeptaScraperForm() {
         <StatusBadge status={state.status} />
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-        {/* Date filter */}
-        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4">
-          <p className="text-sm font-semibold text-gray-700">
-            Date Filter{" "}
-            <span className="font-normal text-gray-400">(optional)</span>
-          </p>
+      {/* Form — hidden while a job is active */}
+      {!isRunning && !isFinished && (
+        <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4">
+            <p className="text-sm font-semibold text-gray-700">
+              Date Filter{" "}
+              <span className="font-normal text-gray-400">(optional)</span>
+            </p>
 
-          <Input
-            id="septa-date-filter"
-            label="Filter Date"
-            type="date"
-            value={dateFilter}
-            onChange={handleDateChange}
-            disabled={isRunning}
-            error={dateError ?? undefined}
-            hint="Leave empty to scrape all currently open quotes"
-          />
+            <Input
+              id="septa-date-filter"
+              label="Filter Date"
+              type="date"
+              value={dateFilter}
+              onChange={handleDateChange}
+              error={dateError ?? undefined}
+              hint="Leave empty to scrape all currently open quotes"
+            />
 
-          {/* Active mode indicator */}
-          <div className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-            <span className="font-semibold whitespace-nowrap">Active mode:</span>
-            <span className="font-mono">
-              {dateFilter ? `Filter by date: ${dateFilter}` : "No date filter — all open quotes"}
-            </span>
+            <div className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              <span className="font-semibold whitespace-nowrap">Active mode:</span>
+              <span className="font-mono">
+                {dateFilter
+                  ? `Filter by date: ${dateFilter}`
+                  : "No filter — all open quotes"}
+              </span>
+            </div>
           </div>
-        </div>
 
-        {/* Credential note */}
-        <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-700">
-          <span className="font-semibold">Credentials:</span> The scraper uses
-          the SEPTA username &amp; password configured in the server&apos;s{" "}
-          <code className="font-mono">.env</code> file.
-        </div>
+          {/* Credential notice */}
+          <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+            <span className="font-semibold">Credentials:</span> Uses the SEPTA
+            username &amp; password from the server&apos;s{" "}
+            <code className="font-mono">.env</code> file.
+          </div>
 
-        {/* Submit */}
-        <Button
-          type="submit"
-          loading={isRunning}
-          disabled={isRunning}
-          className="w-full"
-        >
-          {isRunning ? "Scraping in progress…" : "Start Scraping"}
-        </Button>
-      </form>
+          <Button type="submit" className="w-full">
+            Start Scraping
+          </Button>
+        </form>
+      )}
 
-      {/* Running notice */}
+      {/* Running state — progress card with Stop button */}
       {isRunning && (
-        <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700">
-          <span className="font-semibold">Note:</span> A headless browser is
-          logging into SEPTA and scraping quotes. This can take a few minutes —
-          please keep this tab open.
+        <div className="space-y-4">
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-blue-900">
+                  Scraping in progress…
+                </p>
+                <p className="text-xs text-blue-700 mt-0.5">
+                  A headless browser is logged into SEPTA and collecting quotes.
+                  This can take a few minutes.
+                </p>
+              </div>
+              <Button
+                variant="danger"
+                loading={stopping}
+                onClick={handleStop}
+                className="shrink-0"
+              >
+                {stopping ? "Stopping…" : "Stop"}
+              </Button>
+            </div>
+
+            {state.jobId && (
+              <p className="text-xs text-blue-600 font-mono">
+                Job: {state.jobId}
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+            <span className="font-semibold">Tip:</span> Clicking{" "}
+            <strong>Stop</strong> saves all quotes collected so far — nothing
+            is lost.
+          </div>
         </div>
       )}
 
-      {/* Success panel */}
-      {state.status === "success" && state.filename && (
-        <div className="mt-5 rounded-xl border border-green-200 bg-green-50 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-green-800">
-              Scraping complete!
-            </p>
-            <p className="text-xs text-green-700 mt-0.5 font-mono truncate">
-              {extractFilename(state.filename)}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Button variant="secondary" onClick={handleDownload}>
-              Download
-            </Button>
-            <Button variant="ghost" onClick={handleDismiss}>
-              Reset
-            </Button>
+      {/* Success / stopped panel */}
+      {(state.status === "done" || state.status === "stopped") && (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-green-800">
+                {state.status === "stopped"
+                  ? "Scraping stopped — partial data saved!"
+                  : "Scraping complete!"}
+              </p>
+              {state.filename && (
+                <p className="text-xs text-green-700 mt-0.5 font-mono truncate">
+                  {extractFilename(state.filename)}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {state.filename && (
+                <Button variant="secondary" onClick={handleDownload}>
+                  Download
+                </Button>
+              )}
+              <Button variant="ghost" onClick={handleReset}>
+                New Scrape
+              </Button>
+            </div>
           </div>
         </div>
       )}
 
       {/* Error panel */}
       {state.status === "error" && (
-        <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
           <p className="text-sm font-semibold text-red-800">Scraping failed</p>
           <p className="mt-1 text-xs text-red-700 font-mono break-all">
             {state.error}
           </p>
           <button
-            onClick={handleDismiss}
+            onClick={handleReset}
             className="mt-3 text-xs text-red-600 underline hover:no-underline"
           >
-            Dismiss
+            Try again
           </button>
         </div>
       )}

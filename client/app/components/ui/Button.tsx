@@ -3,7 +3,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Spinner } from "./Spinner";
 
-type Variant = "primary" | "secondary" | "ghost";
+type Variant = "primary" | "secondary" | "ghost" | "danger";
 
 const VARIANT_CLASSES: Record<Variant, string> = {
   primary:
@@ -12,6 +12,8 @@ const VARIANT_CLASSES: Record<Variant, string> = {
     "bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 focus-visible:ring-gray-400",
   ghost:
     "bg-transparent hover:bg-gray-100 text-gray-600 focus-visible:ring-gray-300",
+  danger:
+    "bg-red-600 hover:bg-red-700 active:bg-red-800 text-white focus-visible:ring-red-500",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

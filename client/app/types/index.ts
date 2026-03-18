@@ -12,22 +12,43 @@ export interface SeptaScrapeRequest {
   date_filter?: string;
 }
 
-// ── API response shapes ────────────────────────────────────────────────────────
+// ── Job API shapes ─────────────────────────────────────────────────────────────
 
-export interface ScrapeResponse {
+/** Returned immediately when POST /scrape_* is called. */
+export interface JobStartResponse {
   success: boolean;
-  /** Relative path to the generated output file (CSV / XLSX). */
-  filename?: string;
-  /** Human-readable error message when success === false. */
+  /** Present when success === true. Use to poll /status/{job_id}. */
+  job_id?: string;
+  error?: string;
+}
+
+/** Status string returned by GET /status/{job_id}. */
+export type JobStatus = "running" | "done" | "stopped" | "error";
+
+/** Shape of GET /status/{job_id} response body. */
+export interface JobStatusResponse {
+  status: JobStatus;
+  /** Absolute server-side path to the output file once the job finishes. */
+  filename?: string | null;
+  error?: string | null;
+}
+
+/** Shape of POST /stop/{job_id} response body. */
+export interface StopResponse {
+  success: boolean;
+  message?: string;
   error?: string;
 }
 
 // ── UI state ───────────────────────────────────────────────────────────────────
 
-export type ScraperStatus = "idle" | "running" | "success" | "error";
+/** UI-facing status — extends JobStatus with the initial "idle" state. */
+export type ScraperStatus = "idle" | JobStatus;
 
 export interface ScraperState {
   status: ScraperStatus;
+  /** Active job ID while running or after completion. */
+  jobId?: string;
   filename?: string;
   error?: string;
 }

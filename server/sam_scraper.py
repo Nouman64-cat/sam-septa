@@ -101,6 +101,7 @@ class SAMGovScraper:
         self.data = []
         self._output_filename = None
         self._csv_filepath    = None
+        self._stop_event      = None   # optional threading.Event for graceful stop
 
         fmt = self._date_cfg.get("filter_date_format", "%Y-%m-%d")
 
@@ -1801,6 +1802,14 @@ class SAMGovScraper:
         # ────────────────────────────────────────────────────────────────
 
         while extracted_count < max_records:
+            # ── Stop check ───────────────────────────────────────────────────
+            if self._stop_event and self._stop_event.is_set():
+                logger.info(
+                    f"Stop signal received - saving {extracted_count} partial "
+                    f"rows and exiting."
+                )
+                break
+
             logger.info(f"-- Page {page} ------------------------------------------")
 
             if page == 1:
@@ -1875,6 +1884,16 @@ class SAMGovScraper:
                 if extracted_count >= max_records:
                     break
 
+                # ── Per-bid stop check ───────────────────────────────────
+                # Checked here so Stop responds within ~1 bid (~10 s)
+                # instead of waiting for all candidates on the page.
+                if self._stop_event and self._stop_event.is_set():
+                    logger.info(
+                        f"Stop signal received during bid extraction - "
+                        f"saving {extracted_count} partial rows and exiting."
+                    )
+                    break
+
                 bid_url   = item["url"]
                 bid_title = item["title"]
 
@@ -1884,17 +1903,37 @@ class SAMGovScraper:
                     continue
 
                 logger.info(f"Scraping -> {bid_title}")
-                
+
                 # Open in new tab to preserve the search page's internal state
                 self.driver.execute_script("window.open('');")
                 self.driver.switch_to.window(self.driver.window_handles[1])
-                
+
+                details = None
                 try:
                     details = self.extract_details(bid_url)
+                except Exception as _detail_err:
+                    _emsg = str(_detail_err).lower()
+                    # Browser was closed (manually or due to stop) — exit cleanly
+                    if any(k in _emsg for k in (
+                        "invalid session", "disconnected",
+                        "not connected", "no such window",
+                        "browser has closed",
+                    )):
+                        logger.warning(
+                            f"Browser session lost - saving {extracted_count} "
+                            f"partial rows and exiting."
+                        )
+                        if self._stop_event:
+                            self._stop_event.set()
+                        break
+                    logger.warning(f"Error extracting details from {bid_url}: {_detail_err}")
                 finally:
-                    # Always close the tab and switch back, even if details extraction errors
-                    self.driver.close()
-                    self.driver.switch_to.window(self.driver.window_handles[0])
+                    # Close the tab and switch back; ignore errors if session is gone
+                    try:
+                        self.driver.close()
+                        self.driver.switch_to.window(self.driver.window_handles[0])
+                    except Exception:
+                        pass
 
                 if details:
                     self.data.append(details)
