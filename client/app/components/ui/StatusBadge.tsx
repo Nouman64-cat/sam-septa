@@ -4,7 +4,7 @@ import { Spinner } from "./Spinner";
 interface Config {
   label: string;
   classes: string;
-  icon: "spinner" | "check" | "cross" | "dot";
+  icon: "spinner" | "check" | "cross" | "stop" | "dot";
 }
 
 const STATUS_CONFIG: Record<ScraperStatus, Config> = {
@@ -18,10 +18,15 @@ const STATUS_CONFIG: Record<ScraperStatus, Config> = {
     classes: "bg-blue-100 text-blue-700",
     icon: "spinner",
   },
-  success: {
+  done: {
     label: "Done",
     classes: "bg-green-100 text-green-700",
     icon: "check",
+  },
+  stopped: {
+    label: "Stopped",
+    classes: "bg-amber-100 text-amber-700",
+    icon: "stop",
   },
   error: {
     label: "Error",
@@ -42,9 +47,10 @@ export function StatusBadge({ status }: StatusBadgeProps) {
       className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${classes}`}
     >
       {icon === "spinner" && <Spinner size="sm" />}
-      {icon === "check" && <span aria-hidden>&#10003;</span>}
-      {icon === "cross" && <span aria-hidden>&#10005;</span>}
-      {icon === "dot" && (
+      {icon === "check"   && <span aria-hidden>&#10003;</span>}
+      {icon === "cross"   && <span aria-hidden>&#10005;</span>}
+      {icon === "stop"    && <span aria-hidden>&#9632;</span>}
+      {icon === "dot"     && (
         <span className="h-1.5 w-1.5 rounded-full bg-gray-400" aria-hidden />
       )}
       {label}
