@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Card } from "../ui/Card";
 import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
 import { StatusBadge } from "../ui/StatusBadge";
@@ -9,17 +8,9 @@ import { scrapeSam } from "../../services/samService";
 import { stopJob } from "../../services/jobService";
 import { exportSam } from "../../services/exportService";
 import { useJobPoller } from "../../hooks/useJobPoller";
+import { useToast } from "../../context/ToastContext";
 import { validateDateRange, describeDateScenario } from "../../utils/dateUtils";
 import type { ScraperState, JobStatusResponse } from "../../types";
-
-// ── Scenario reference grid ───────────────────────────────────────────────────
-
-const SCENARIOS = [
-  { label: "Both dates", desc: "From → To" },
-  { label: "From only",  desc: "From → Today" },
-  { label: "Same date",  desc: "Exact day" },
-  { label: "No dates",   desc: "All bids" },
-] as const;
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -32,20 +23,34 @@ export function SamScraperForm() {
   const [state, setState]           = useState<ScraperState>(INITIAL);
   const [stopping, setStopping]     = useState(false);
 
+  const { toast } = useToast();
+
   const isRunning  = state.status === "running";
   const isFinished = ["done", "stopped", "error"].includes(state.status);
 
   // ── Job polling ────────────────────────────────────────────────────────────
 
-  const handleStatusUpdate = useCallback((res: JobStatusResponse) => {
-    setState((prev) => ({
-      ...prev,
-      status:      res.status,
-      recordCount: res.record_count,
-      error:       res.error ?? undefined,
-    }));
-    if (res.status !== "running") setStopping(false);
-  }, []);
+  const handleStatusUpdate = useCallback(
+    (res: JobStatusResponse) => {
+      setState((prev) => ({
+        ...prev,
+        status:      res.status,
+        recordCount: res.record_count,
+        error:       res.error ?? undefined,
+      }));
+      if (res.status !== "running") {
+        setStopping(false);
+        if (res.status === "done") {
+          toast("success", "SAM.gov scraping complete!", `${res.record_count} bids saved to database`);
+        } else if (res.status === "stopped") {
+          toast("warning", "Scraping stopped", `${res.record_count} bids saved`);
+        } else if (res.status === "error") {
+          toast("error", "SAM.gov scraping failed", res.error?.slice(0, 100));
+        }
+      }
+    },
+    [toast],
+  );
 
   useJobPoller(state.jobId, { onStatusUpdate: handleStatusUpdate });
 
@@ -75,14 +80,18 @@ export function SamScraperForm() {
       });
       if (res.success && res.job_id) {
         setState({ status: "running", jobId: res.job_id, recordCount: 0 });
+        const modeDesc = dateFrom
+          ? `Date range: ${dateFrom}${dateTo ? ` → ${dateTo}` : " → today"}`
+          : "All open bids";
+        toast("info", "SAM.gov scraping started", modeDesc);
       } else {
         setState({ status: "error", error: res.error ?? "Failed to start job." });
+        toast("error", "Failed to start scraping", res.error);
       }
     } catch (err: unknown) {
-      setState({
-        status: "error",
-        error: err instanceof Error ? err.message : "Network error — is the server running?",
-      });
+      const msg = err instanceof Error ? err.message : "Network error — is the server running?";
+      setState({ status: "error", error: msg });
+      toast("error", "Network error", msg.slice(0, 100));
     }
   }
 
@@ -93,154 +102,166 @@ export function SamScraperForm() {
     catch { setStopping(false); }
   }
 
-  function handleExport() { exportSam(state.jobId); }
-  function handleReset()  { setState(INITIAL); setStopping(false); }
+  function handleExport() {
+    exportSam(state.jobId);
+    toast("info", "Preparing download", "Your Excel file will begin downloading shortly");
+  }
+
+  function handleReset() {
+    setState(INITIAL);
+    setStopping(false);
+    setDateFrom("");
+    setDateTo("");
+    setRangeError(null);
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <Card>
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6 gap-4">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+
+      {/* Blue accent stripe */}
+      <div className="h-1 bg-blue-600" />
+
+      {/* Card header */}
+      <div className="px-6 pt-5 pb-4 flex items-start justify-between gap-3 border-b border-slate-100">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">SAM.gov Scraper</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Collects government bid notices — results saved directly to the database.
+          <h2 className="text-base font-bold text-slate-900">SAM.gov Scraper</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Government bids — results saved to database
           </p>
         </div>
         <StatusBadge status={state.status} />
       </div>
 
-      {/* ── Form (visible only when idle) ── */}
-      {!isRunning && !isFinished && (
-        <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4">
-            <p className="text-sm font-semibold text-gray-700">
-              Date Range Filter{" "}
-              <span className="font-normal text-gray-400">(optional)</span>
-            </p>
+      {/* Content */}
+      <div className="p-6">
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input
-                id="sam-date-from"
-                label="From Date"
-                type="date"
-                value={dateFrom}
-                onChange={handleFromChange}
-                hint="Start of the date range"
-              />
-              <Input
-                id="sam-date-to"
-                label="To Date"
-                type="date"
-                value={dateTo}
-                onChange={handleToChange}
-                hint="Defaults to today when left empty"
-              />
-            </div>
-
-            {rangeError && (
-              <p className="text-sm text-red-600 flex items-center gap-1.5">
-                <span aria-hidden>&#9888;</span> {rangeError}
+        {/* ── Idle: form ── */}
+        {!isRunning && !isFinished && (
+          <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest">
+                Date Range — <span className="font-normal normal-case">optional</span>
               </p>
-            )}
 
-            <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
-              <span className="font-semibold whitespace-nowrap">Active mode:</span>
-              <span className="font-mono">{describeDateScenario(dateFrom, dateTo)}</span>
-            </div>
-          </div>
-
-          {/* Scenario reference */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {SCENARIOS.map(({ label, desc }) => (
-              <div key={label} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-center">
-                <div className="text-xs font-semibold text-gray-600">{label}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{desc}</div>
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  id="sam-date-from"
+                  label="From Date"
+                  type="date"
+                  value={dateFrom}
+                  onChange={handleFromChange}
+                  hint="Start of range"
+                />
+                <Input
+                  id="sam-date-to"
+                  label="To Date"
+                  type="date"
+                  value={dateTo}
+                  onChange={handleToChange}
+                  hint="Defaults to today"
+                />
               </div>
-            ))}
-          </div>
 
-          <Button type="submit" className="w-full">Start Scraping</Button>
-        </form>
-      )}
-
-      {/* ── Running state ── */}
-      {isRunning && (
-        <div className="space-y-4">
-          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-blue-900">Scraping in progress…</p>
-                <p className="text-xs text-blue-700 mt-0.5">
-                  Each bid is saved to the database as it is scraped.
+              {rangeError && (
+                <p className="text-xs text-red-500 flex items-center gap-1.5">
+                  <span aria-hidden>⚠</span> {rangeError}
                 </p>
+              )}
+
+              {/* Active mode chip */}
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span>Mode:</span>
+                <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 border border-blue-100 px-2.5 py-0.5 font-medium text-xs">
+                  {describeDateScenario(dateFrom, dateTo)}
+                </span>
               </div>
+            </div>
+
+            <Button type="submit" className="w-full" variant="primary">
+              Start Scraping SAM.gov
+            </Button>
+          </form>
+        )}
+
+        {/* ── Running ── */}
+        {isRunning && (
+          <div className="space-y-5">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-slate-700">
+                  Collecting bids…
+                </p>
+                <span className="text-xl font-bold font-mono text-slate-900 tabular-nums leading-none">
+                  {state.recordCount ?? 0}
+                </span>
+              </div>
+
+              <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                <div className="h-full bg-blue-500 animate-pulse rounded-full w-full" />
+              </div>
+
+              <div className="flex items-center justify-between">
+                {state.jobId
+                  ? <p className="text-xs text-slate-400 font-mono truncate">{state.jobId}</p>
+                  : <span />}
+                <p className="text-xs text-slate-400 shrink-0">bids saved</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-100">
+              <p className="text-xs text-slate-400">Stopping saves all collected bids.</p>
               <Button variant="danger" loading={stopping} onClick={handleStop} className="shrink-0">
                 {stopping ? "Stopping…" : "Stop"}
               </Button>
             </div>
+          </div>
+        )}
 
-            {/* Live counter */}
-            <div className="mt-3 flex items-center gap-3">
-              <div className="flex-1 h-1.5 rounded-full bg-blue-200 overflow-hidden">
-                <div className="h-full bg-blue-500 animate-pulse w-full" />
+        {/* ── Done / Stopped ── */}
+        {(state.status === "done" || state.status === "stopped") && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3.5">
+              <span className="text-emerald-600 font-bold text-base leading-5 mt-px shrink-0">✓</span>
+              <div>
+                <p className="text-sm font-semibold text-emerald-800">
+                  {state.status === "stopped" ? "Stopped — partial data saved" : "Scraping complete!"}
+                </p>
+                <p className="text-xs text-emerald-700 mt-0.5">
+                  <span className="font-mono font-bold">{state.recordCount ?? 0}</span>{" "}
+                  bids saved to database
+                </p>
               </div>
-              <span className="text-xs font-mono text-blue-700 whitespace-nowrap">
-                {state.recordCount ?? 0} bids saved
-              </span>
             </div>
 
-            {state.jobId && (
-              <p className="text-xs text-blue-500 font-mono mt-2">Job: {state.jobId}</p>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-700">
-            <span className="font-semibold">Tip:</span> Stopping saves all bids collected so far — nothing is lost.
-          </div>
-        </div>
-      )}
-
-      {/* ── Success / stopped ── */}
-      {(state.status === "done" || state.status === "stopped") && (
-        <div className="rounded-xl border border-green-200 bg-green-50 p-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-green-800">
-                {state.status === "stopped" ? "Stopped — partial data saved to DB" : "Complete!"}
-              </p>
-              <p className="text-xs text-green-700 mt-0.5">
-                <span className="font-semibold font-mono">{state.recordCount ?? 0}</span> bids
-                saved to the database
-                {state.jobId && (
-                  <span className="text-green-600"> · {state.jobId}</span>
-                )}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="grid grid-cols-2 gap-2">
               <Button variant="secondary" onClick={handleExport}>
-                Export to Excel
+                ↓ Export to Excel
               </Button>
-              <Button variant="ghost" onClick={handleReset}>New Scrape</Button>
+              <Button variant="ghost" onClick={handleReset}>
+                + New Scrape
+              </Button>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Error ── */}
-      {state.status === "error" && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-          <p className="text-sm font-semibold text-red-800">Scraping failed</p>
-          <p className="mt-1 text-xs text-red-700 font-mono break-all">{state.error}</p>
-          <button
-            onClick={handleReset}
-            className="mt-3 text-xs text-red-600 underline hover:no-underline"
-          >
-            Try again
-          </button>
-        </div>
-      )}
-    </Card>
+        {/* ── Error ── */}
+        {state.status === "error" && (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3.5">
+              <p className="text-sm font-semibold text-red-800">Scraping failed</p>
+              <p className="mt-1.5 text-xs text-red-600 font-mono break-all leading-relaxed">
+                {state.error}
+              </p>
+            </div>
+            <Button variant="ghost" onClick={handleReset} className="w-full">
+              Try Again
+            </Button>
+          </div>
+        )}
+
+      </div>
+    </div>
   );
 }

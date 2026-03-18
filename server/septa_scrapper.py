@@ -694,7 +694,7 @@ class SeptaPortal:
             logger.error(f"Error scraping quotes: {e}")
         return quotes
 
-    def scrape_all_pages(self, stop_event=None) -> List[Dict[str, str]]:
+    def scrape_all_pages(self, stop_event=None, on_quote=None) -> List[Dict[str, str]]:
         all_quotes: List[Dict[str, str]] = []
         max_pages = self.config.scraping_cfg["max_pages"]
         page_sleep = self._t["page_change_sleep"]
@@ -731,6 +731,13 @@ class SeptaPortal:
 
             last_signature = signature
             all_quotes.extend(quotes)
+            # Fire per-quote callback so callers can update a live counter
+            if on_quote:
+                for q in quotes:
+                    try:
+                        on_quote(q)
+                    except Exception as _cb_err:
+                        logger.warning(f"on_quote callback failed: {_cb_err}")
             logger.info(
                 f"Page {page_num}: {len(quotes)} quotes | total: {len(all_quotes)}"
             )

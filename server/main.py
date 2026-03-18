@@ -286,13 +286,9 @@ async def scrape_septa(body: SeptaScrapeRequest):
                 _finish_job(job_id, "error", 0, "SEPTA navigation to Open Quotes failed.")
                 return
 
-            portal.apply_date_filter(body.date_filter)
-            quotes = portal.scrape_all_pages(stop_event=stop_event)
-            browser_manager.close_driver()
-
-            # Bulk-insert all collected quotes
-            with Session(engine) as s:
-                for q in quotes:
+            def _on_quote(q: dict):
+                """Called per quote — inserts to DB and updates live counter."""
+                with Session(engine) as s:
                     s.add(SeptaQuote(
                         job_id             = job_id,
                         requisition_number = q.get("requisition_number", ""),
@@ -300,12 +296,15 @@ async def scrape_septa(body: SeptaScrapeRequest):
                         open_date          = q.get("open_date", ""),
                         close_date         = q.get("close_date", ""),
                     ))
-                s.commit()
+                    s.commit()
+                _jobs[job_id]["record_count"] += 1
 
-            count  = len(quotes)
-            final  = "stopped" if stop_event.is_set() else "done"
-            _jobs[job_id]["record_count"] = count
-            _finish_job(job_id, final, count)
+            portal.apply_date_filter(body.date_filter)
+            portal.scrape_all_pages(stop_event=stop_event, on_quote=_on_quote)
+            browser_manager.close_driver()
+
+            final = "stopped" if stop_event.is_set() else "done"
+            _finish_job(job_id, final, _jobs[job_id]["record_count"])
 
         except Exception as exc:
             _finish_job(job_id, "error", _jobs[job_id]["record_count"], str(exc))
