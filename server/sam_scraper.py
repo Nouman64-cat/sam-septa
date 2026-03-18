@@ -248,6 +248,8 @@ class SAMGovScraper:
             url += (
                 f"&sfm%5Bdates%5D%5BupdatedDate%5D%5BupdatedDateFrom%5D={from_iso}"
                 f"&sfm%5Bdates%5D%5BupdatedDate%5D%5BupdatedDateTo%5D={to_iso}"
+                f"&sfm%5Bdates%5D%5BresponseDue%5D%5BresponseDueFrom%5D={from_iso}"
+                f"&sfm%5Bdates%5D%5BresponseDue%5D%5BresponseDueTo%5D={to_iso}"
             )
             logger.debug(f"URL date range params appended: {from_iso} -> {to_iso} (page {page})")
 
@@ -435,7 +437,8 @@ class SAMGovScraper:
     # ------------------------------------------------------------------
     def _apply_ui_date_filters(self) -> bool:
         """
-        Fill SAM.gov's "Updated Date" range pickers after page 1 has loaded.
+        Fill SAM.gov's "Updated Date" and "Response/Date Offers Due" range
+        pickers after page 1 has loaded, using the same from/to date range.
 
         Two strategies are tried for each input field:
           1. Exact element ID from config  (formly_31_datepicker_updatedDateFrom_1)
@@ -445,7 +448,7 @@ class SAMGovScraper:
         and 'blur' events so Angular's change-detection picks up the new values,
         then waits for the results list to re-render.
 
-        Returns True if at least the from-date field was filled successfully.
+        Returns True if at least the Updated Date from-date field was filled.
         """
         if not self.filter_date_from:
             return False
@@ -519,14 +522,26 @@ class SAMGovScraper:
                 logger.debug(f"Error filling date input '{input_id}': {exc}")
                 return False
 
+        # --- Updated Date pickers ---
         from_ok = _fill(from_id, from_str, "updatedDateFrom")
         to_ok   = _fill(to_id,   to_str,   "updatedDateTo")
+
+        # --- Response / Date Offers Due pickers (same date range) ---
+        resp_from_id = ui_cfg.get(
+            "resp_due_from_input_id", "formly_25_datepicker_responseDueFrom_1"
+        )
+        resp_to_id = ui_cfg.get(
+            "resp_due_to_input_id", "formly_25_datepicker_responseDueTo_2"
+        )
+        resp_from_ok = _fill(resp_from_id, from_str, "responseDueFrom")
+        resp_to_ok   = _fill(resp_to_id,   to_str,   "responseDueTo")
 
         if from_ok:
             time.sleep(wait_sec)   # wait for Angular to re-render results
             logger.info(
-                f"UI date filter applied: {from_str} to {to_str} "
-                f"(from={'OK' if from_ok else 'FAIL'}, to={'OK' if to_ok else 'FAIL'})"
+                f"UI date filters applied: {from_str} → {to_str} | "
+                f"updatedDate(from={'OK' if from_ok else 'FAIL'}, to={'OK' if to_ok else 'FAIL'}) | "
+                f"responseDue(from={'OK' if resp_from_ok else 'FAIL'}, to={'OK' if resp_to_ok else 'FAIL'})"
             )
         else:
             logger.warning(

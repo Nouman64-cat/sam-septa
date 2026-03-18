@@ -218,19 +218,19 @@ sam:
   skip_conditions:
     # Bid is skipped if Department/Ind. Agency contains any of these (case-insensitive)
     # Covers full name, abbreviation, and British spelling variants.
-    department_skip_terms:
-      - "department of defense"
-      - "department of defence"
-      - "dept of defense"
-      - "dept of defence"
-      - "dept of def"
+    # department_skip_terms:
+    #   - "department of defense"
+    #   - "department of defence"
+    #   - "dept of defense"
+    #   - "dept of defence"
+    #   - "dept of def"
 
-    # Bid is skipped if Subtier contains any of these (case-insensitive)
-    subtier_skip_terms:
-      - "department of defense"
-      - "department of defence"
-      - "dept of defense"
-      - "dept of defence"
+    # # Bid is skipped if Subtier contains any of these (case-insensitive)
+    # subtier_skip_terms:
+    #   - "department of defense"
+    #   - "department of defence"
+    #   - "dept of defense"
+    #   - "dept of defence"
 
     # Bid is skipped if Office contains any of these (case-insensitive)
     office_skip_terms:
