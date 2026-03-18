@@ -342,7 +342,10 @@ async def export_sam(job_id: Optional[str] = Query(default=None)):
         for b in bids
     ]
 
-    filename = f"sam_bids_{job_id or 'all'}.xlsx"
+    _now = datetime.now()
+    _hr  = _now.strftime("%I").lstrip("0") or "12"
+    ts   = _now.strftime(f"%Y-%m-%d, {_hr}:%M %p")
+    filename = f"sam_{ts}.xlsx"
     stream   = _styled_workbook("SAM Bids", headers, rows)
     return StreamingResponse(
         stream,
@@ -374,7 +377,10 @@ async def export_septa(job_id: Optional[str] = Query(default=None)):
         for q in quotes
     ]
 
-    filename = f"septa_quotes_{job_id or 'all'}.xlsx"
+    _now = datetime.now()
+    _hr  = _now.strftime("%I").lstrip("0") or "12"
+    ts   = _now.strftime(f"%Y-%m-%d, {_hr}:%M %p")
+    filename = f"septa_{ts}.xlsx"
     stream   = _styled_workbook("SEPTA Quotes", headers, rows)
     return StreamingResponse(
         stream,
