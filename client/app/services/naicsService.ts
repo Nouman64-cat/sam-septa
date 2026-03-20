@@ -21,3 +21,10 @@ export async function searchNaics(q: string, page = 1, limit = 50): Promise<Naic
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
+
+export async function getNaicsCount(): Promise<number> {
+  const res = await fetch(`${BASE_URL}/naics?page=1&limit=1`);
+  if (!res.ok) return 0;
+  const data: NaicsListResponse = await res.json();
+  return data.total;
+}

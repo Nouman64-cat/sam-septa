@@ -6,6 +6,12 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "cd server && .venv\\Scripts\\activate && uvicorn main:app --host 127.0.0.1 --port 8001"],
       "port": 8001
+    },
+    {
+      "name": "Frontend",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd client && npm run dev"],
+      "port": 3000
     }
   ]
 }

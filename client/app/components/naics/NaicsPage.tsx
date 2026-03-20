@@ -16,10 +16,10 @@ export function NaicsPage() {
   const [stopping, setStopping] = useState(false);
   const { toast } = useToast();
 
-  // ── Search / results state ────────────────────────────────────────────────
+  // ── Search / results state ──────────────────────────────────────────────
   const [query,   setQuery]   = useState("");
   const [results, setResults] = useState<NaicsCodeItem[]>([]);
-  const [total,   setTotal]   = useState(0);
+  const [total,   setTotal]   = useState<number | null>(null);
   const [page,    setPage]    = useState(1);
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -28,8 +28,9 @@ export function NaicsPage() {
 
   const isRunning  = state.status === "running";
   const isFinished = ["done", "stopped", "error"].includes(state.status);
+  const hasData    = total !== null && total > 0;
 
-  // ── Fetch results ─────────────────────────────────────────────────────────
+  // ── Fetch results ───────────────────────────────────────────────────────
 
   const fetchResults = useCallback(async (q: string, p: number) => {
     setLoading(true);
@@ -38,16 +39,14 @@ export function NaicsPage() {
       setResults(data.results);
       setTotal(data.total);
     } catch {
-      // silently ignore — table will stay empty
+      // silently ignore
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Initial load
   useEffect(() => { fetchResults("", 1); }, [fetchResults]);
 
-  // Debounced search on query change
   function handleQueryChange(e: React.ChangeEvent<HTMLInputElement>) {
     const q = e.target.value;
     setQuery(q);
@@ -61,7 +60,7 @@ export function NaicsPage() {
     fetchResults(query, next);
   }
 
-  // ── Job polling ───────────────────────────────────────────────────────────
+  // ── Job polling ─────────────────────────────────────────────────────────
 
   const handleStatusUpdate = useCallback(
     (res: JobStatusResponse) => {
@@ -75,7 +74,7 @@ export function NaicsPage() {
         setStopping(false);
         if (res.status === "done") {
           toast("success", "NAICS scraping complete!", `${res.record_count} codes saved`);
-          fetchResults(query, 1);   // refresh table
+          fetchResults(query, 1);
         } else if (res.status === "stopped") {
           toast("warning", "Scraping stopped", `${res.record_count} codes saved`);
           fetchResults(query, 1);
@@ -89,7 +88,7 @@ export function NaicsPage() {
 
   useJobPoller(state.jobId, { onStatusUpdate: handleStatusUpdate });
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
+  // ── Handlers ────────────────────────────────────────────────────────────
 
   async function handleStart() {
     setState({ status: "running" });
@@ -121,45 +120,102 @@ export function NaicsPage() {
     setStopping(false);
   }
 
-  const totalPages = Math.ceil(total / LIMIT);
+  const totalPages = Math.ceil((total ?? 0) / LIMIT);
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
 
-      {/* ── Scraper Control Card ── */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-w-md mx-auto">
-        <div className="h-1 bg-violet-600" />
+      {/* ── Status Hero Card ── */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <div className="h-1 bg-violet-600 rounded-t-2xl" />
 
-        <div className="px-6 pt-5 pb-4 flex items-start justify-between gap-3 border-b border-slate-100">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">NAICS Code Scraper</h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Fetches all 6-digit industry codes from naics.com
-            </p>
+        <div className="px-6 pt-6 pb-6">
+          {/* Big count + status row */}
+          <div className="flex items-center justify-between gap-4 mb-5">
+            <div className="flex items-center gap-4">
+              {/* Big count badge */}
+              <div className={[
+                "flex items-center justify-center w-20 h-20 rounded-2xl",
+                hasData
+                  ? "bg-violet-50 border border-violet-100"
+                  : "bg-slate-50 border border-slate-200",
+              ].join(" ")}>
+                <span className={[
+                  "text-3xl font-bold font-mono tabular-nums leading-none",
+                  hasData ? "text-violet-700" : "text-slate-300",
+                ].join(" ")}>
+                  {total === null ? "—" : total.toLocaleString()}
+                </span>
+              </div>
+
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">NAICS Codes</h2>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  {hasData
+                    ? "6-digit industry codes stored in your database"
+                    : "No codes in database yet"}
+                </p>
+              </div>
+            </div>
+
+            {isRunning && <StatusBadge status="running" />}
           </div>
-          <StatusBadge status={state.status} />
-        </div>
 
-        <div className="p-6">
+          {/* ── Context-aware action area ── */}
 
-          {/* Idle */}
-          {!isRunning && !isFinished && (
-            <div className="space-y-4">
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Scrapes every 6-digit NAICS code and industry title across all sectors.
-                Estimated run time: <span className="font-semibold text-slate-700">1–3 minutes</span>.
-              </p>
-              <Button onClick={handleStart} className="w-full" variant="primary">
-                Start Scraping NAICS Codes
-              </Button>
+          {/* Empty state — no data, not running */}
+          {!hasData && !isRunning && !isFinished && (
+            <div className="rounded-xl bg-amber-50 border border-amber-100 px-5 py-4 mb-4">
+              <div className="flex items-start gap-3">
+                <span className="text-amber-500 text-lg leading-5 mt-px shrink-0">!</span>
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">
+                    Database is empty
+                  </p>
+                  <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                    NAICS codes are needed for the SAM.gov scraper filter. Run the scraper
+                    once to populate all 1,000+ industry codes. This only takes 1–3 minutes
+                    and you typically only need to do it once.
+                  </p>
+                </div>
+              </div>
             </div>
           )}
 
-          {/* Running */}
+          {/* Has data — show reassurance */}
+          {hasData && !isRunning && !isFinished && (
+            <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-5 py-4 mb-4">
+              <div className="flex items-start gap-3">
+                <span className="text-emerald-600 font-bold text-base leading-5 mt-px shrink-0">&#10003;</span>
+                <div>
+                  <p className="text-sm font-semibold text-emerald-800">
+                    Database is up to date
+                  </p>
+                  <p className="text-xs text-emerald-700 mt-1 leading-relaxed">
+                    NAICS codes rarely change. You can re-scrape anytime if you
+                    need to refresh or if the database was reset.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Idle action buttons */}
+          {!isRunning && !isFinished && (
+            <Button
+              onClick={handleStart}
+              className="w-full"
+              variant={hasData ? "secondary" : "primary"}
+            >
+              {hasData ? "Re-scrape NAICS Codes" : "Scrape NAICS Codes Now"}
+            </Button>
+          )}
+
+          {/* Running state */}
           {isRunning && (
-            <div className="space-y-5">
+            <div className="space-y-4">
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium text-slate-700">Collecting codes…</p>
@@ -177,7 +233,7 @@ export function NaicsPage() {
                   <p className="text-xs text-slate-400 shrink-0">codes saved</p>
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-100">
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
                 <p className="text-xs text-slate-400">Stopping saves all collected codes.</p>
                 <Button variant="danger" loading={stopping} onClick={handleStop} className="shrink-0">
                   {stopping ? "Stopping…" : "Stop"}
@@ -190,7 +246,7 @@ export function NaicsPage() {
           {(state.status === "done" || state.status === "stopped") && (
             <div className="space-y-4">
               <div className="flex items-start gap-3 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3.5">
-                <span className="text-emerald-600 font-bold text-base leading-5 mt-px shrink-0">✓</span>
+                <span className="text-emerald-600 font-bold text-base leading-5 mt-px shrink-0">&#10003;</span>
                 <div>
                   <p className="text-sm font-semibold text-emerald-800">
                     {state.status === "stopped" ? "Stopped — partial data saved" : "Scraping complete!"}
@@ -202,7 +258,7 @@ export function NaicsPage() {
                 </div>
               </div>
               <Button variant="ghost" onClick={handleReset} className="w-full">
-                + New Scrape
+                Done
               </Button>
             </div>
           )}
@@ -224,95 +280,90 @@ export function NaicsPage() {
         </div>
       </div>
 
-      {/* ── Search & Results ── */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 pt-5 pb-4 border-b border-slate-100 flex items-center justify-between gap-4">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900">NAICS Code Reference</h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {total > 0 ? `${total.toLocaleString()} codes in database` : "No codes scraped yet"}
-            </p>
+      {/* ── Search & Results Table ── (only show when data exists) */}
+      {hasData && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+          <div className="px-6 pt-5 pb-4 border-b border-slate-100 flex items-center justify-between gap-4">
+            <h3 className="text-sm font-bold text-slate-900">Browse Codes</h3>
+            <div className="w-72">
+              <Input
+                id="naics-search"
+                label=""
+                placeholder="Search by code or industry name…"
+                value={query}
+                onChange={handleQueryChange}
+              />
+            </div>
           </div>
-          <div className="w-64">
-            <Input
-              id="naics-search"
-              label=""
-              placeholder="Search by code or keyword…"
-              value={query}
-              onChange={handleQueryChange}
-            />
-          </div>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50">
-                <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-32">
-                  NAICS Code
-                </th>
-                <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Industry Title
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <tr>
-                  <td colSpan={2} className="py-10 text-center text-xs text-slate-400">
-                    Loading…
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50">
+                  <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-32">
+                    Code
+                  </th>
+                  <th className="text-left py-2.5 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Industry Title
+                  </th>
                 </tr>
-              )}
-              {!loading && results.length === 0 && (
-                <tr>
-                  <td colSpan={2} className="py-10 text-center text-xs text-slate-400">
-                    {total === 0
-                      ? "No NAICS codes in database yet. Run the scraper above to populate."
-                      : "No codes match your search."}
-                  </td>
-                </tr>
-              )}
-              {!loading && results.map((r) => (
-                <tr
-                  key={r.code}
-                  className="border-b border-slate-50 hover:bg-violet-50/40 transition-colors"
-                >
-                  <td className="py-2.5 px-4 font-mono text-slate-700 font-semibold text-xs">
-                    {r.code}
-                  </td>
-                  <td className="py-2.5 px-4 text-slate-600 text-xs">
-                    {r.title}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-between gap-3">
-            <button
-              onClick={() => handlePage(page - 1)}
-              disabled={page <= 1}
-              className="text-xs font-medium text-slate-500 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              ← Previous
-            </button>
-            <span className="text-xs text-slate-400">
-              Page {page} of {totalPages}
-            </span>
-            <button
-              onClick={() => handlePage(page + 1)}
-              disabled={page >= totalPages}
-              className="text-xs font-medium text-slate-500 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              Next →
-            </button>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr>
+                    <td colSpan={2} className="py-10 text-center text-xs text-slate-400">
+                      Loading…
+                    </td>
+                  </tr>
+                )}
+                {!loading && results.length === 0 && (
+                  <tr>
+                    <td colSpan={2} className="py-10 text-center text-xs text-slate-400">
+                      No codes match your search.
+                    </td>
+                  </tr>
+                )}
+                {!loading && results.map((r) => (
+                  <tr
+                    key={r.code}
+                    className="border-b border-slate-50 hover:bg-violet-50/40 transition-colors"
+                  >
+                    <td className="py-2.5 px-4 font-mono text-violet-700 font-semibold text-xs">
+                      {r.code}
+                    </td>
+                    <td className="py-2.5 px-4 text-slate-600 text-xs">
+                      {r.title}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
-      </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-between gap-3">
+              <button
+                onClick={() => handlePage(page - 1)}
+                disabled={page <= 1}
+                className="text-xs font-medium text-slate-500 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                &#8592; Previous
+              </button>
+              <span className="text-xs text-slate-400">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                onClick={() => handlePage(page + 1)}
+                disabled={page >= totalPages}
+                className="text-xs font-medium text-slate-500 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                Next &#8594;
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
