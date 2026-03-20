@@ -1,8 +1,9 @@
 // ── API request shapes ─────────────────────────────────────────────────────────
 
 export interface SamScrapeRequest {
-  date_filter?: string;   // from-date YYYY-MM-DD
-  date_to?: string;       // to-date   YYYY-MM-DD
+  date_filter?: string;     // from-date YYYY-MM-DD
+  date_to?: string;         // to-date   YYYY-MM-DD
+  naics_codes?: string[];   // list of 6-digit NAICS codes
 }
 
 export interface SeptaScrapeRequest {

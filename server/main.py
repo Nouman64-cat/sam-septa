@@ -214,9 +214,11 @@ async def scrape_sam(body: SamScrapeRequest):
                 office           = bid.get("Office", ""),
                 description      = bid.get("Description", ""),
                 updated_date     = bid.get("Updated Date", ""),
+                bid_repeat_count = int(bid.get("bid_repeat_count", 0)),
+                naics_code       = bid.get("NAICS Code", ""),
+                naics_title      = bid.get("NAICS Title", ""),
                 date_offers_due  = bid.get("Date Offers Due", ""),
                 published_date   = bid.get("Published Date", ""),
-                bid_repeat_count = int(bid.get("bid_repeat_count", 0)),
             ))
             s.commit()
         _jobs[job_id]["record_count"] += 1
@@ -227,6 +229,7 @@ async def scrape_sam(body: SamScrapeRequest):
                 headless    = False,
                 date_filter = body.date_filter,
                 date_to     = body.date_to,
+                naics_codes = body.naics_codes,
             )
             scraper._stop_event       = stop_event
             scraper.skip_csv          = True      # no CSV files
@@ -334,12 +337,14 @@ async def export_sam(job_id: Optional[str] = Query(default=None)):
     headers = [
         "Notice Title", "Notice ID", "Department/Ind. Agency",
         "Description", "Subtier", "Updated Date",
-        "Bid Repeat Count", "Date Offers Due", "Published Date", "Office",
+        "Bid Repeat Count", "NAICS Code", "NAICS Title",
+        "Date Offers Due", "Published Date", "Office",
     ]
     rows = [
         [
             b.title, b.notice_id, b.department, b.description,
             b.subtier, b.updated_date, b.bid_repeat_count,
+            b.naics_code, b.naics_title,
             b.date_offers_due, b.published_date, b.office,
         ]
         for b in bids

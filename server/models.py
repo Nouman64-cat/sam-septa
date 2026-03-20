@@ -8,13 +8,9 @@ from pydantic import BaseModel
 # ── Request body schemas ───────────────────────────────────────────────────────
 
 class SamScrapeRequest(BaseModel):
-    date_filter: Optional[str] = None   # from-date  YYYY-MM-DD  (start of range)
-    date_to:     Optional[str] = None   # to-date    YYYY-MM-DD  (end   of range)
-    # Scenarios:
-    #   date_filter only           → range [date_filter, today]
-    #   date_filter + date_to      → range [date_filter, date_to]
-    #   date_filter == date_to     → exact single-day match
-    #   neither field provided     → no date filter (scrape everything)
+    date_filter: Optional[str] = None         # from-date  YYYY-MM-DD  (start of range)
+    date_to:     Optional[str] = None         # to-date    YYYY-MM-DD  (end   of range)
+    naics_codes: Optional[list[str]] = None   # list of 6-digit NAICS codes to filter
 
 
 class SeptaScrapeRequest(BaseModel):
@@ -64,6 +60,8 @@ class SamBid(SQLModel, table=True):
     description:      Optional[str] = Field(default="", sa_column=Column(Text))
     updated_date:     str           = Field(default="", max_length=50)
     bid_repeat_count: int           = Field(default=0)
+    naics_code:       str           = Field(default="", max_length=20)
+    naics_title:      str           = Field(default="", max_length=500)
     date_offers_due:  str           = Field(default="", max_length=50)
     published_date:   str           = Field(default="", max_length=50)
     # ── Metadata ──────────────────────────────────────────────────────────────
