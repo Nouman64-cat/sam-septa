@@ -8,13 +8,9 @@ from pydantic import BaseModel
 # ── Request body schemas ───────────────────────────────────────────────────────
 
 class SamScrapeRequest(BaseModel):
-    date_filter: Optional[str] = None   # from-date  YYYY-MM-DD  (start of range)
-    date_to:     Optional[str] = None   # to-date    YYYY-MM-DD  (end   of range)
-    # Scenarios:
-    #   date_filter only           → range [date_filter, today]
-    #   date_filter + date_to      → range [date_filter, date_to]
-    #   date_filter == date_to     → exact single-day match
-    #   neither field provided     → no date filter (scrape everything)
+    date_filter: Optional[str] = None         # from-date  YYYY-MM-DD  (start of range)
+    date_to:     Optional[str] = None         # to-date    YYYY-MM-DD  (end   of range)
+    naics_codes: Optional[list[str]] = None   # list of 6-digit NAICS codes to filter
 
 
 class SeptaScrapeRequest(BaseModel):
@@ -33,7 +29,7 @@ class ScrapeJob(SQLModel, table=True):
 
     id:            Optional[int]      = Field(default=None, primary_key=True)
     job_id:        str                = Field(unique=True, max_length=100)
-    scraper:       str                = Field(max_length=10)   # 'sam' | 'septa'
+    scraper:       str                = Field(max_length=10)   # 'sam' | 'septa' | 'naics'
     status:        str                = Field(default="running", max_length=10)
     # Filters used for this run (nullable — blank means "no filter")
     date_from:     Optional[str]      = Field(default=None, max_length=20)
@@ -64,6 +60,8 @@ class SamBid(SQLModel, table=True):
     description:      Optional[str] = Field(default="", sa_column=Column(Text))
     updated_date:     str           = Field(default="", max_length=50)
     bid_repeat_count: int           = Field(default=0)
+    naics_code:       str           = Field(default="", max_length=20)
+    naics_title:      str           = Field(default="", max_length=500)
     date_offers_due:  str           = Field(default="", max_length=50)
     published_date:   str           = Field(default="", max_length=50)
     # ── Metadata ──────────────────────────────────────────────────────────────
@@ -88,6 +86,17 @@ class SeptaQuote(SQLModel, table=True):
     close_date:          str           = Field(default="", max_length=50)
     # ── Metadata ──────────────────────────────────────────────────────────────
     scraped_at:          datetime      = Field(default_factory=datetime.utcnow)
+
+
+# ── NAICS codes ────────────────────────────────────────────────────────────────
+
+class NaicsCode(SQLModel, table=True):
+    __tablename__ = "naics_codes"
+
+    id:         Optional[int] = Field(default=None, primary_key=True)
+    code:       str           = Field(unique=True, max_length=10)
+    title:      str           = Field(default="", max_length=500)
+    scraped_at: datetime      = Field(default_factory=datetime.utcnow)
 
 
 # ── Legacy tables (Unison / DIBBS — unchanged) ─────────────────────────────────

@@ -86,12 +86,14 @@ class SAMGovScraper:
         headless: bool = False,
         date_filter: str = None,   # kept for backward-compat; treated as date_from
         date_to: str = None,
+        naics_codes: list[str] | None = None,
     ):
         self._load_config()
 
         self.headless    = headless
         self.date_filter = date_filter      # YYYY-MM-DD  (from / start of range)
         self.date_to     = date_to          # YYYY-MM-DD  (to   / end   of range)
+        self.naics_codes = naics_codes or []  # list of 6-digit NAICS codes to filter
 
         # Parsed datetime objects
         self.filter_date_from = None        # start of range
@@ -237,6 +239,11 @@ class SAMGovScraper:
         """
         url = self.base_url.format(page=page)
 
+        # ── NAICS code URL params ─────────────────────────────────────
+        if self.naics_codes:
+            for code in self.naics_codes:
+                url += f"&sfm%5BnaicsCodes%5D%5B%5D={code}"
+
         if self.filter_date_from:
             from_iso = self.filter_date_from.strftime("%Y-%m-%d")
             to_iso   = (
@@ -248,8 +255,6 @@ class SAMGovScraper:
             url += (
                 f"&sfm%5Bdates%5D%5BupdatedDate%5D%5BupdatedDateFrom%5D={from_iso}"
                 f"&sfm%5Bdates%5D%5BupdatedDate%5D%5BupdatedDateTo%5D={to_iso}"
-                f"&sfm%5Bdates%5D%5BresponseDue%5D%5BresponseDueFrom%5D={from_iso}"
-                f"&sfm%5Bdates%5D%5BresponseDue%5D%5BresponseDueTo%5D={to_iso}"
             )
             logger.debug(f"URL date range params appended: {from_iso} -> {to_iso} (page {page})")
 
@@ -526,22 +531,11 @@ class SAMGovScraper:
         from_ok = _fill(from_id, from_str, "updatedDateFrom")
         to_ok   = _fill(to_id,   to_str,   "updatedDateTo")
 
-        # --- Response / Date Offers Due pickers (same date range) ---
-        resp_from_id = ui_cfg.get(
-            "resp_due_from_input_id", "formly_25_datepicker_responseDueFrom_1"
-        )
-        resp_to_id = ui_cfg.get(
-            "resp_due_to_input_id", "formly_25_datepicker_responseDueTo_2"
-        )
-        resp_from_ok = _fill(resp_from_id, from_str, "responseDueFrom")
-        resp_to_ok   = _fill(resp_to_id,   to_str,   "responseDueTo")
-
         if from_ok:
             time.sleep(wait_sec)   # wait for Angular to re-render results
             logger.info(
                 f"UI date filters applied: {from_str} → {to_str} | "
-                f"updatedDate(from={'OK' if from_ok else 'FAIL'}, to={'OK' if to_ok else 'FAIL'}) | "
-                f"responseDue(from={'OK' if resp_from_ok else 'FAIL'}, to={'OK' if resp_to_ok else 'FAIL'})"
+                f"updatedDate(from={'OK' if from_ok else 'FAIL'}, to={'OK' if to_ok else 'FAIL'})"
             )
         else:
             logger.warning(
@@ -550,6 +544,111 @@ class SAMGovScraper:
             )
 
         return from_ok
+
+    # ------------------------------------------------------------------
+    # NAICS code filter
+    # ------------------------------------------------------------------
+    def _apply_naics_filter(self):
+        """
+        Fill SAM.gov's NAICS combobox input (id="naics") with each code
+        from self.naics_codes. The input is an Angular autocomplete — we
+        type the code, wait for the dropdown suggestion, then select it.
+        """
+        if not self.naics_codes:
+            return
+
+        # ── Step 1: Expand the "Product or Service Information" accordion ──
+        # The NAICS input is hidden inside a collapsed accordion section.
+        # We need to click the accordion button to reveal the input first.
+        try:
+            accordion_btn = None
+            # Find the accordion button by its text content
+            btns = self.driver.find_elements(
+                By.CSS_SELECTOR, "button.usa-accordion__button"
+            )
+            for btn in btns:
+                if "product or service" in btn.text.lower():
+                    accordion_btn = btn
+                    break
+
+            if accordion_btn:
+                # Check if already expanded
+                expanded = accordion_btn.get_attribute("aria-expanded")
+                if expanded != "true":
+                    self.driver.execute_script(
+                        "arguments[0].scrollIntoView({block:'center'});",
+                        accordion_btn,
+                    )
+                    time.sleep(0.5)
+                    accordion_btn.click()
+                    time.sleep(1)  # wait for accordion animation
+                    logger.info("Expanded 'Product or Service Information' accordion")
+                else:
+                    logger.info("'Product or Service Information' accordion already expanded")
+            else:
+                logger.warning("Could not find 'Product or Service Information' accordion button")
+        except Exception as exc:
+            logger.warning(f"Error expanding accordion: {exc}")
+
+        # ── Step 2: Enter each NAICS code into the input ──────────────────
+        for code in self.naics_codes:
+            try:
+                el = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "naics"))
+                )
+                self.driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});", el
+                )
+                time.sleep(0.5)
+                el.click()
+                time.sleep(0.3)
+
+                # Clear any existing text first
+                el.send_keys(Keys.CONTROL + "a")
+                el.send_keys(Keys.DELETE)
+                time.sleep(0.2)
+                el.send_keys(code)
+                time.sleep(2)  # wait for SAM.gov autocomplete dropdown to render
+
+                # Click the first autocomplete result item
+                # SAM.gov renders: <li id="naics-resultItem-0" class="sds-autocomplete__item">
+                selected = False
+                try:
+                    option = WebDriverWait(self.driver, 5).until(
+                        EC.element_to_be_clickable((By.ID, "naics-resultItem-0"))
+                    )
+                    option.click()
+                    selected = True
+                    logger.info(f"NAICS code {code}: selected via resultItem-0")
+                except Exception:
+                    pass
+
+                # Fallback: try CSS selector for sds-autocomplete item
+                if not selected:
+                    try:
+                        option = WebDriverWait(self.driver, 3).until(
+                            EC.element_to_be_clickable((
+                                By.CSS_SELECTOR,
+                                "li.sds-autocomplete__item"
+                            ))
+                        )
+                        option.click()
+                        selected = True
+                        logger.info(f"NAICS code {code}: selected via sds-autocomplete__item")
+                    except Exception:
+                        pass
+
+                if not selected:
+                    logger.warning(f"NAICS code {code}: no dropdown item found to click")
+
+                time.sleep(1)
+
+            except Exception as exc:
+                logger.warning(f"Failed to apply NAICS code {code}: {exc}")
+
+        # Wait for results to re-render after applying all codes
+        time.sleep(3)
+        logger.info(f"Applied {len(self.naics_codes)} NAICS code(s)")
 
     # ------------------------------------------------------------------
     # Timing helpers
@@ -1300,6 +1399,42 @@ class SAMGovScraper:
                 soup, ids.get("office", "office"), "Office"
             )
 
+            # ── Field 10: NAICS Code + Title ─────────────────────────────
+            # DOM structure on bid detail page:
+            #   <div id="naics" class="sds-field"> NAICS Code </div>
+            #   <h5 aria-describedby="naics" class="value-new-line">
+            #       561730 - Landscaping Services
+            #   </h5>
+            naics_code  = ""
+            naics_title = ""
+            try:
+                # Strategy A: aria-describedby="naics" on <h5>
+                naics_h5 = soup.find("h5", attrs={"aria-describedby": "naics"})
+                if naics_h5:
+                    naics_text = naics_h5.get_text(strip=True)
+                else:
+                    # Strategy B: Selenium fallback
+                    try:
+                        naics_el = self.driver.find_element(
+                            By.CSS_SELECTOR, "h5[aria-describedby='naics']"
+                        )
+                        naics_text = naics_el.text.strip()
+                    except Exception:
+                        naics_text = ""
+
+                if naics_text and " - " in naics_text:
+                    parts = naics_text.split(" - ", 1)
+                    naics_code  = parts[0].strip()
+                    naics_title = parts[1].strip()
+                elif naics_text:
+                    # Might be just the code without title
+                    naics_code = naics_text.strip()
+            except Exception as _naics_err:
+                logger.debug(f"NAICS extraction failed: {_naics_err}")
+
+            data["NAICS Code"]  = naics_code
+            data["NAICS Title"] = naics_title
+
             # ── Re-verify version/date rule against detail-page Updated Date
             #    (uses raw string that still contains the version count)
             if not self._check_updated_date_rule(data["Updated Date"]):
@@ -1936,6 +2071,9 @@ class SAMGovScraper:
                 # side; filling the date-picker inputs confirms the filter
                 # in the Angular state so it persists across page clicks.
                 self._apply_ui_date_filters()
+
+                # ── Apply NAICS code filter ────────────────────────────────
+                self._apply_naics_filter()
 
             else:
                 # ── Page 2+: click the Next button to stay in-session ────

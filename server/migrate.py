@@ -20,10 +20,11 @@ _DROP = """
 DROP TABLE IF EXISTS septa_quotes  CASCADE;
 DROP TABLE IF EXISTS sam_bids      CASCADE;
 DROP TABLE IF EXISTS scrape_jobs   CASCADE;
+DROP TABLE IF EXISTS naics_codes   CASCADE;
 """
 
 def main():
-    print("Dropping old tables (sam_bids, septa_quotes, scrape_jobs)...")
+    print("Dropping old tables (sam_bids, septa_quotes, scrape_jobs, naics_codes)...")
     with engine.connect() as conn:
         conn.execute(text(_DROP))
         conn.commit()
@@ -32,7 +33,7 @@ def main():
     print("Re-creating all tables with the current schema...")
     create_db_and_tables()
     print("Done — tables created:")
-    print("  scrape_jobs, sam_bids, septa_quotes, unison_requests, dibbs_bids")
+    print("  scrape_jobs, sam_bids, septa_quotes, naics_codes, unison_requests, dibbs_bids")
 
 if __name__ == "__main__":
     main()

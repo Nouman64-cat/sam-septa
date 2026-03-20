@@ -17,6 +17,7 @@ export function Navbar() {
   const isHome  = pathname === "/";
   const isSam   = pathname === "/sam";
   const isSepta = pathname === "/septa";
+  const isNaics = pathname === "/naics";
 
   const navLink = (active: boolean) =>
     [
@@ -49,6 +50,7 @@ export function Navbar() {
           <Link href="/"      className={navLink(isHome)}>Home</Link>
           <Link href="/sam"   className={navLink(isSam)}>SAM.gov</Link>
           <Link href="/septa" className={navLink(isSepta)}>SEPTA</Link>
+          <Link href="/naics" className={navLink(isNaics)}>NAICS</Link>
           <Link href="/#guide" className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors">
             How It Works
           </Link>
@@ -64,9 +66,15 @@ export function Navbar() {
           </Link>
           <Link
             href="/septa"
-            className="inline-flex items-center rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-xs font-semibold transition-colors"
+            className="hidden sm:inline-flex items-center rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-xs font-semibold transition-colors"
           >
             SEPTA Scraper
+          </Link>
+          <Link
+            href="/naics"
+            className="inline-flex items-center rounded-lg bg-violet-600 hover:bg-violet-700 text-white px-3.5 py-2 text-xs font-semibold transition-colors"
+          >
+            NAICS Codes
           </Link>
         </div>
       </div>

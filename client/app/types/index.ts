@@ -1,8 +1,9 @@
 // ── API request shapes ─────────────────────────────────────────────────────────
 
 export interface SamScrapeRequest {
-  date_filter?: string;   // from-date YYYY-MM-DD
-  date_to?: string;       // to-date   YYYY-MM-DD
+  date_filter?: string;     // from-date YYYY-MM-DD
+  date_to?: string;         // to-date   YYYY-MM-DD
+  naics_codes?: string[];   // list of 6-digit NAICS codes
 }
 
 export interface SeptaScrapeRequest {
@@ -44,6 +45,20 @@ export interface ScrapeJobRecord {
   finished_at:   string | null;
   record_count:  number;
   error_message: string | null;
+}
+
+// ── NAICS ─────────────────────────────────────────────────────────────────────
+
+export interface NaicsCodeItem {
+  code:  string;
+  title: string;
+}
+
+export interface NaicsListResponse {
+  total:   number;
+  page:    number;
+  limit:   number;
+  results: NaicsCodeItem[];
 }
 
 // ── UI state ───────────────────────────────────────────────────────────────────

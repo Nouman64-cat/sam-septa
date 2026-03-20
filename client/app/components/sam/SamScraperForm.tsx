@@ -1,28 +1,42 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
 import { StatusBadge } from "../ui/StatusBadge";
 import { scrapeSam } from "../../services/samService";
 import { stopJob } from "../../services/jobService";
 import { exportSam } from "../../services/exportService";
+import { searchNaics } from "../../services/naicsService";
 import { useJobPoller } from "../../hooks/useJobPoller";
 import { useToast } from "../../context/ToastContext";
 import { useSamScraper } from "../../context/SamScraperContext";
 import { validateDateRange, describeDateScenario } from "../../utils/dateUtils";
-import type { JobStatusResponse } from "../../types";
+import type { JobStatusResponse, NaicsCodeItem } from "../../types";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function SamScraperForm() {
   // Persistent state from context (survives page navigation)
-  const { state, setState, dateFrom, setDateFrom, dateTo, setDateTo, reset } =
-    useSamScraper();
+  const {
+    state, setState,
+    dateFrom, setDateFrom,
+    dateTo, setDateTo,
+    naicsCodes, setNaicsCodes,
+    reset,
+  } = useSamScraper();
 
   // Transient UI-only state (no need to persist)
   const [rangeError, setRangeError] = useState<string | null>(null);
   const [stopping,   setStopping]   = useState(false);
+
+  // NAICS search state
+  const [naicsQuery,   setNaicsQuery]   = useState("");
+  const [naicsResults, setNaicsResults] = useState<NaicsCodeItem[]>([]);
+  const [naicsOpen,    setNaicsOpen]    = useState(false);
+  const [naicsLoading, setNaicsLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Prevent selecting future dates
   const today = new Date().toISOString().split("T")[0];
@@ -31,6 +45,57 @@ export function SamScraperForm() {
 
   const isRunning  = state.status === "running";
   const isFinished = ["done", "stopped", "error"].includes(state.status);
+
+  // ── Close dropdown when clicking outside ──────────────────────────────────
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setNaicsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  // ── NAICS search handler ──────────────────────────────────────────────────
+  function handleNaicsSearch(e: React.ChangeEvent<HTMLInputElement>) {
+    const q = e.target.value;
+    setNaicsQuery(q);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    if (!q.trim()) {
+      setNaicsResults([]);
+      setNaicsOpen(false);
+      return;
+    }
+
+    debounceRef.current = setTimeout(async () => {
+      setNaicsLoading(true);
+      try {
+        const data = await searchNaics(q, 1, 10);
+        setNaicsResults(data.results);
+        setNaicsOpen(data.results.length > 0);
+      } catch {
+        setNaicsResults([]);
+      } finally {
+        setNaicsLoading(false);
+      }
+    }, 300);
+  }
+
+  function addNaicsCode(code: string) {
+    if (!naicsCodes.includes(code)) {
+      setNaicsCodes((prev) => [...prev, code]);
+    }
+    setNaicsQuery("");
+    setNaicsResults([]);
+    setNaicsOpen(false);
+  }
+
+  function removeNaicsCode(code: string) {
+    setNaicsCodes((prev) => prev.filter((c) => c !== code));
+  }
 
   // ── Job polling ────────────────────────────────────────────────────────────
 
@@ -81,6 +146,7 @@ export function SamScraperForm() {
       const res = await scrapeSam({
         date_filter: dateFrom || undefined,
         date_to:     dateTo   || undefined,
+        naics_codes: naicsCodes.length > 0 ? naicsCodes : undefined,
       });
       if (res.success && res.job_id) {
         setState({ status: "running", jobId: res.job_id, recordCount: 0 });
@@ -120,10 +186,10 @@ export function SamScraperForm() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
 
       {/* Blue accent stripe */}
-      <div className="h-1 bg-blue-600" />
+      <div className="h-1 bg-blue-600 rounded-t-2xl" />
 
       {/* Card header */}
       <div className="px-6 pt-5 pb-4 flex items-start justify-between gap-3 border-b border-slate-100">
@@ -181,6 +247,79 @@ export function SamScraperForm() {
                   {describeDateScenario(dateFrom, dateTo)}
                 </span>
               </div>
+            </div>
+
+            {/* ── NAICS Code Filter ── */}
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest">
+                NAICS Codes — <span className="font-normal normal-case">optional</span>
+              </p>
+
+              {/* Search input with dropdown */}
+              <div ref={dropdownRef} className="relative">
+                <input
+                  type="text"
+                  placeholder="Search by code or industry name…"
+                  value={naicsQuery}
+                  onChange={handleNaicsSearch}
+                  onFocus={() => naicsResults.length > 0 && setNaicsOpen(true)}
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-300 focus:ring-1 focus:ring-blue-200 focus:bg-white outline-none transition-all"
+                />
+                {naicsLoading && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">
+                    ...
+                  </span>
+                )}
+
+                {/* Dropdown */}
+                {naicsOpen && naicsResults.length > 0 && (
+                  <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                    {naicsResults.map((r) => {
+                      const isSelected = naicsCodes.includes(r.code);
+                      return (
+                        <button
+                          key={r.code}
+                          type="button"
+                          onClick={() => addNaicsCode(r.code)}
+                          disabled={isSelected}
+                          className={[
+                            "w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors",
+                            isSelected
+                              ? "bg-blue-50 text-blue-400 cursor-not-allowed"
+                              : "hover:bg-slate-50 text-slate-700",
+                          ].join(" ")}
+                        >
+                          <span className="font-mono font-semibold shrink-0 w-16">{r.code}</span>
+                          <span className="truncate">{r.title}</span>
+                          {isSelected && <span className="ml-auto text-blue-500 shrink-0">Added</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Selected chips */}
+              {naicsCodes.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {naicsCodes.map((code) => (
+                    <span
+                      key={code}
+                      className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 px-2.5 py-1 text-xs font-medium"
+                    >
+                      {code}
+                      <button
+                        type="button"
+                        onClick={() => removeNaicsCode(code)}
+                        className="ml-0.5 text-blue-400 hover:text-blue-700 transition-colors leading-none"
+                        aria-label={`Remove ${code}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             <Button type="submit" className="w-full" variant="primary">
