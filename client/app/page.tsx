@@ -42,6 +42,24 @@ const SCRAPERS = [
     stripe:    "bg-emerald-600",
     statColor: "text-emerald-600",
   },
+  {
+    href:        "/naics",
+    tag:         "Industry Classification",
+    title:       "NAICS Code Scraper",
+    description:
+      "Scrape all 6-digit NAICS codes and industry titles from naics.com. Stored as a searchable reference dataset — search by code or keyword instantly.",
+    stats: [
+      { label: "Fields extracted", value: "2" },
+      { label: "Total codes",      value: "~1,000+" },
+      { label: "Est. run time",    value: "1–3 min" },
+    ],
+    cta:       "Launch NAICS Scraper",
+    badge:     "bg-violet-50 border-violet-100 text-violet-700",
+    dot:       "bg-violet-500",
+    btn:       "bg-violet-600 hover:bg-violet-700 shadow-violet-200",
+    stripe:    "bg-violet-600",
+    statColor: "text-violet-600",
+  },
 ] as const;
 
 // ── Page ───────────────────────────────────────────────────────────────────
@@ -77,7 +95,7 @@ export default function Home() {
           Choose a scraper to get started
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {SCRAPERS.map((s) => (
             <div
               key={s.href}

@@ -4,6 +4,7 @@ import { ToastProvider } from "./context/ToastContext";
 import { ToastContainer } from "./components/ui/Toast";
 import { SamScraperProvider } from "./context/SamScraperContext";
 import { SeptaScraperProvider } from "./context/SeptaScraperContext";
+import { NaicsScraperProvider } from "./context/NaicsScraperContext";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -34,8 +35,10 @@ export default function RootLayout({
         <ToastProvider>
           <SamScraperProvider>
             <SeptaScraperProvider>
+            <NaicsScraperProvider>
               {children}
               <ToastContainer />
+            </NaicsScraperProvider>
             </SeptaScraperProvider>
           </SamScraperProvider>
         </ToastProvider>

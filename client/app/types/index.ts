@@ -46,6 +46,20 @@ export interface ScrapeJobRecord {
   error_message: string | null;
 }
 
+// ── NAICS ─────────────────────────────────────────────────────────────────────
+
+export interface NaicsCodeItem {
+  code:  string;
+  title: string;
+}
+
+export interface NaicsListResponse {
+  total:   number;
+  page:    number;
+  limit:   number;
+  results: NaicsCodeItem[];
+}
+
 // ── UI state ───────────────────────────────────────────────────────────────────
 
 export type ScraperStatus = "idle" | JobStatus;

@@ -33,7 +33,7 @@ class ScrapeJob(SQLModel, table=True):
 
     id:            Optional[int]      = Field(default=None, primary_key=True)
     job_id:        str                = Field(unique=True, max_length=100)
-    scraper:       str                = Field(max_length=10)   # 'sam' | 'septa'
+    scraper:       str                = Field(max_length=10)   # 'sam' | 'septa' | 'naics'
     status:        str                = Field(default="running", max_length=10)
     # Filters used for this run (nullable — blank means "no filter")
     date_from:     Optional[str]      = Field(default=None, max_length=20)
@@ -88,6 +88,17 @@ class SeptaQuote(SQLModel, table=True):
     close_date:          str           = Field(default="", max_length=50)
     # ── Metadata ──────────────────────────────────────────────────────────────
     scraped_at:          datetime      = Field(default_factory=datetime.utcnow)
+
+
+# ── NAICS codes ────────────────────────────────────────────────────────────────
+
+class NaicsCode(SQLModel, table=True):
+    __tablename__ = "naics_codes"
+
+    id:         Optional[int] = Field(default=None, primary_key=True)
+    code:       str           = Field(unique=True, max_length=10)
+    title:      str           = Field(default="", max_length=500)
+    scraped_at: datetime      = Field(default_factory=datetime.utcnow)
 
 
 # ── Legacy tables (Unison / DIBBS — unchanged) ─────────────────────────────────

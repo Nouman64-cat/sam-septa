@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(find /c/projects/sam-septa/client/app -type f \\\\\\(-name *.tsx -o -name *.ts -o -name *.jsx -o -name *.js \\\\\\))",
-      "Bash(grep -E \"\\\\.\\(tsx|ts|jsx|js|json|css\\)$\")"
+      "Bash(grep -E \"\\\\.\\(tsx|ts|jsx|js|json|css\\)$\")",
+      "Bash(python migrate.py)",
+      "Bash(python -c \":*)"
     ]
   }
 }
