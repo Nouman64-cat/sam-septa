@@ -99,76 +99,37 @@ export default function Home() {
           {SCRAPERS.map((s) => (
             <div
               key={s.href}
-              className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col"
+              className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col hover:-translate-y-1 transition-transform duration-300"
             >
-              {/* Accent stripe */}
-              <div className={`h-1.5 ${s.stripe}`} />
+              <Link href={s.href} className="flex flex-col h-full cursor-pointer">
+                {/* Accent stripe */}
+                <div className={`h-1.5 ${s.stripe}`} />
 
-              <div className="p-7 flex flex-col gap-5 flex-1">
-                {/* Tag + title */}
-                <div>
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${s.badge}`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
-                    {s.tag}
-                  </span>
-                  <h2 className="mt-3 text-xl font-extrabold text-slate-900">
-                    {s.title}
-                  </h2>
-                  <p className="mt-1.5 text-sm text-slate-500 leading-relaxed">
-                    {s.description}
-                  </p>
-                </div>
-
-                {/* Stats row */}
-                <div className="grid grid-cols-3 gap-3">
-                  {s.stats.map(({ label, value }) => (
-                    <div
-                      key={label}
-                      className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3 text-center"
+                <div className="p-7 flex flex-col gap-6 flex-1">
+                  {/* Tag + title */}
+                  <div className="text-center">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${s.badge}`}
                     >
-                      <p className={`text-base font-extrabold ${s.statColor}`}>
-                        {value}
-                      </p>
-                      <p className="text-[10px] text-slate-400 mt-0.5 leading-tight">
-                        {label}
-                      </p>
+                      <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
+                      {s.tag}
+                    </span>
+                    <h2 className="mt-4 text-2xl font-extrabold text-slate-900">
+                      {s.title}
+                    </h2>
+                  </div>
+
+                  {/* CTA */}
+                  <div className="mt-auto pt-2">
+                    <div
+                      className={`flex items-center justify-center gap-2 w-full rounded-xl text-white text-sm font-semibold px-5 py-3.5 shadow-lg transition-all ${s.btn}`}
+                    >
+                      {s.cta}
+                      <span className="opacity-75">→</span>
                     </div>
-                  ))}
+                  </div>
                 </div>
-
-                {/* Features list */}
-                <ul className="space-y-1.5 text-xs text-slate-500">
-                  <li className="flex items-center gap-2">
-                    <span className="text-slate-300">✓</span>
-                    Live record counter during scraping
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <span className="text-slate-300">✓</span>
-                    All results saved to PostgreSQL database
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <span className="text-slate-300">✓</span>
-                    Export to styled .xlsx in one click
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <span className="text-slate-300">✓</span>
-                    Stop at any time — data is preserved
-                  </li>
-                </ul>
-
-                {/* CTA */}
-                <div className="mt-auto pt-1">
-                  <Link
-                    href={s.href}
-                    className={`flex items-center justify-center gap-2 w-full rounded-xl text-white text-sm font-semibold px-5 py-3.5 shadow-lg transition-all hover:-translate-y-0.5 ${s.btn}`}
-                  >
-                    {s.cta}
-                    <span className="opacity-75">→</span>
-                  </Link>
-                </div>
-              </div>
+              </Link>
             </div>
           ))}
         </div>

@@ -31,7 +31,7 @@ export default function SeptaPage() {
             SEPTA Procurement Quote Scraper
           </h1>
           <p className="mt-2 text-sm text-slate-500 leading-relaxed">
-            Collect open vendor quote requests from SEPTA's procurement portal.
+            Collect open vendor quote requests from SEPTA&apos;s procurement portal.
             Authenticated automatically via server credentials — results saved
             to your database and exportable as Excel.
           </p>
