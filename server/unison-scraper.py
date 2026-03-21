@@ -15,11 +15,12 @@ from selenium.webdriver.common.keys import Keys
 
 # Configuration
 load_dotenv()
+os.makedirs('logs', exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('unison_scraper.log'),
+        logging.FileHandler('logs/unison_scraper.log'),
         logging.StreamHandler()
     ]
 )
@@ -669,7 +670,7 @@ class UnisonMarketplaceScraper:
             print("=" * 60)
             print(f"✓ Extracted: {len(all_data)} new requests")
             print(f"✓ Saved to: {self.csv_file}")
-            print(f"✓ Log file: unison_scraper.log")
+            print(f"✓ Log file: logs/unison_scraper.log")
             print("=" * 60)
             
             if len(all_data) == 0:

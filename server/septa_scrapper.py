@@ -52,14 +52,15 @@ def _get_log_file_from_config() -> str:
             return (
                 cfg.get("septa", {})
                    .get("logging", {})
-                   .get("log_file", "septa_scraper.log")
+                   .get("log_file", "logs/septa_scraper.log")
             )
         except Exception:
             pass
-    return "septa_scraper.log"
+    return "logs/septa_scraper.log"
 
 
 LOG_FILE = _get_log_file_from_config()
+os.makedirs(os.path.dirname(LOG_FILE) or ".", exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,

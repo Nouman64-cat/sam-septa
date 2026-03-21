@@ -60,13 +60,15 @@ def _get_sam_log_config() -> dict:
 
 
 _log_cfg = _get_sam_log_config()
+_log_file = _log_cfg.get("log_file", "logs/sam_scraper.log")
+os.makedirs(os.path.dirname(_log_file) or ".", exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
     format=_log_cfg.get("format", "%(asctime)s - %(levelname)s - %(message)s"),
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(_log_cfg.get("log_file", "sam_scraper.log")),
+        logging.FileHandler(_log_file),
     ],
 )
 logger = logging.getLogger(__name__)

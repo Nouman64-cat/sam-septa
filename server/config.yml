@@ -25,7 +25,7 @@ urls:
 septa:
 
   logging:
-    log_file: "septa_scraper.log"
+    log_file: "logs/septa_scraper.log"
 
   browser:
     window_size: "1920,1080"
@@ -119,7 +119,7 @@ septa:
 sam:
 
   logging:
-    log_file: "sam_scraper.log"
+    log_file: "logs/sam_scraper.log"
     format: "%(asctime)s - %(levelname)s - %(message)s"
 
   # --------------------------------------------------------------------------
