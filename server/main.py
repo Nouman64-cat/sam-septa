@@ -21,7 +21,7 @@ from models import (
     UnisonRequest, DibbsBid,
     SamScrapeRequest, SeptaScrapeRequest, UnisonScrapeRequest,
 )
-from sam_scraper import SAMGovScraper
+from sam.sam_scraper import SAMGovScraper
 from naics_scraper import NaicsCodeScraper
 
 # Import Septa Scraper
