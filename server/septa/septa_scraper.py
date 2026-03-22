@@ -43,8 +43,8 @@ except ImportError:
 # Bootstrap logging – read log filename from config.yml before anything else
 # ---------------------------------------------------------------------------
 def _get_log_file_from_config() -> str:
-    """Read septa.logging.log_file from config.yml; fall back to a safe default."""
-    config_file = Path.cwd() / "config.yml"
+    """Read septa.logging.log_file from config/config.yml; fall back to a safe default."""
+    config_file = Path.cwd() / "config" / "config.yml"
     if config_file.exists():
         try:
             with open(config_file, "r", encoding="utf-8") as f:
@@ -197,8 +197,8 @@ class Config:
     # Internal helpers
     # ------------------------------------------------------------------
     def _load_config_yaml(self):
-        """Load all SEPTA configuration from config.yml."""
-        config_file = Path.cwd() / "config.yml"
+        """Load all SEPTA configuration from config/config.yml."""
+        config_file = Path.cwd() / "config" / "config.yml"
         yaml_septa: dict = {}
 
         if config_file.exists():

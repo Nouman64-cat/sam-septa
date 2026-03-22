@@ -116,8 +116,8 @@ _SAM_DIR = Path(__file__).resolve().parent
 # Bootstrap logging from config.yml before basicConfig is called
 # ---------------------------------------------------------------------------
 def _get_sam_log_config() -> dict:
-    # Try dedicated sam/config.yml first, then fall back to root config.yml
-    for cfg_file in (_SAM_DIR / "config.yml", Path.cwd() / "config.yml"):
+    # Try dedicated sam/config.yml first, then fall back to root config/config.yml
+    for cfg_file in (_SAM_DIR / "config.yml", Path.cwd() / "config" / "config.yml"):
         if cfg_file.exists():
             try:
                 with open(cfg_file, "r", encoding="utf-8") as f:
@@ -219,10 +219,10 @@ class SAMGovScraper:
     # Config loading
     # ------------------------------------------------------------------
     def _load_config(self):
-        # Try dedicated sam/config.yml first, then fall back to root config.yml
+        # Try dedicated sam/config.yml first, then fall back to root config/config.yml
         cfg_file = _SAM_DIR / "config.yml"
         if not cfg_file.exists():
-            cfg_file = Path.cwd() / "config.yml"
+            cfg_file = Path.cwd() / "config" / "config.yml"
         if not cfg_file.exists():
             raise FileNotFoundError(f"config.yml not found at {cfg_file}")
 
