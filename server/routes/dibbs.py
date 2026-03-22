@@ -1,7 +1,6 @@
 """DIBBS scraper route."""
 
 import os
-import importlib.util
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -9,15 +8,7 @@ from sqlmodel import Session
 
 from database import engine
 from models import DibbsBid
-
-# Import Dibbs Scraper (handling hyphen in filename)
-try:
-    spec_dibbs = importlib.util.spec_from_file_location("dibbs_module", "dibbs-scrapper.py")
-    dibbs_module = importlib.util.module_from_spec(spec_dibbs)
-    spec_dibbs.loader.exec_module(dibbs_module)
-    DibbsScraper = dibbs_module.DibbsScraper
-except Exception as e:
-    print(f"Error importing Dibbs scraper: {e}")
+from dibbs.dibbs_scraper import DibbsScraper
 
 router = APIRouter()
 
