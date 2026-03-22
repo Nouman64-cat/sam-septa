@@ -2,7 +2,6 @@
 
 import csv
 import os
-import importlib.util
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -10,15 +9,7 @@ from sqlmodel import Session
 
 from database import engine
 from models import UnisonRequest, UnisonScrapeRequest
-
-# Import Unison Scraper (handling hyphen in filename)
-try:
-    spec = importlib.util.spec_from_file_location("unison_module", "unison-scraper.py")
-    unison_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(unison_module)
-    UnisonMarketplaceScraper = unison_module.UnisonMarketplaceScraper
-except Exception as e:
-    print(f"Error importing Unison scraper: {e}")
+from unison.unison_scraper import UnisonMarketplaceScraper
 
 router = APIRouter()
 
