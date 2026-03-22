@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlmodel import Session, select
 
-from database import engine
+from db import engine
 from models import ScrapeJob, SeptaQuote, SeptaScrapeRequest
 
 from septa.septa_scraper import (

@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from database import engine
+from db import engine
 from models import ScrapeJob, NaicsCode
 from naics.naics_scraper import NaicsCodeScraper
 

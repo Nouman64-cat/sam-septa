@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlmodel import Session, select
 
-from database import create_db_and_tables, engine
+from db import create_db_and_tables, engine
 from models import ScrapeJob
 
 

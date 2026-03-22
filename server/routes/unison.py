@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
-from database import engine
+from db import engine
 from models import UnisonRequest, UnisonScrapeRequest
 from unison.unison_scraper import UnisonMarketplaceScraper
 

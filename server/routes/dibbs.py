@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
-from database import engine
+from db import engine
 from models import DibbsBid
 from dibbs.dibbs_scraper import DibbsScraper
 
