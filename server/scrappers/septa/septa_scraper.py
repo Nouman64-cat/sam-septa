@@ -21,6 +21,8 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+from scrappers.exceptions import StopScraping, check_stop, smart_sleep
 from selenium.common.exceptions import (
     TimeoutException,
     ElementClickInterceptedException,
@@ -431,14 +433,18 @@ class BrowserManager:
 class SeptaPortal:
     """Handles all interactions with the SEPTA procurement portal."""
 
-    def __init__(self, browser_manager: BrowserManager, config: Config):
+    def __init__(self, browser_manager: BrowserManager, config: Config, stop_event=None):
         self.browser = browser_manager
         self.config  = config
         self.driver  = browser_manager.driver
         self.wait    = browser_manager.wait
+        self.stop_event = stop_event
         self._sel    = config.selectors       # shorthand
         self._t      = config.timeouts        # shorthand
         self._nav    = config.navigation_cfg  # shorthand
+
+    def _check(self):
+        check_stop(self.stop_event)
 
     # ------------------------------------------------------------------
     # Login
@@ -567,12 +573,15 @@ class SeptaPortal:
             nav_attempts.append(lambda: self._explore_menu_structure())
 
             for attempt in nav_attempts:
+                self._check()
                 try:
                     if attempt():
-                        time.sleep(self._t["navigation_sleep"])
+                        smart_sleep(self._t["navigation_sleep"], self.stop_event)
                         if self._is_on_open_quotes_page():
                             logger.info("Successfully navigated to Open Quotes")
                             return True
+                except StopScraping:
+                    raise
                 except Exception as e:
                     logger.debug(f"Navigation attempt failed: {e}")
                     continue
@@ -682,6 +691,7 @@ class SeptaPortal:
 
             logger.info(f"Found {len(rows) - 1} data rows")
             for i, row in enumerate(rows[1:], 1):
+                self._check()
                 try:
                     row_data = self._extract_row_data(row)
                     if row_data:
@@ -696,59 +706,59 @@ class SeptaPortal:
         return quotes
 
     def scrape_all_pages(self, stop_event=None, on_quote=None) -> List[Dict[str, str]]:
+        if stop_event: self.stop_event = stop_event
         all_quotes: List[Dict[str, str]] = []
         max_pages = self.config.scraping_cfg["max_pages"]
         page_sleep = self._t["page_change_sleep"]
         page_num = 1
         last_signature = None
 
-        while page_num <= max_pages:
-            # ── Stop check ───────────────────────────────────────────────────
-            if stop_event and stop_event.is_set():
-                logger.info(
-                    f"Stop signal received - returning {len(all_quotes)} partial quotes."
+        try:
+            while page_num <= max_pages:
+                self._check()
+
+                logger.info(f"Processing page {page_num}…")
+                quotes = self.scrape_quotes()
+
+                if not quotes:
+                    logger.warning(f"No quotes on page {page_num}, stopping.")
+                    break
+
+                signature = sorted(
+                    str(q.get("requisition_number", "")) + str(q.get("summary", ""))
+                    for q in quotes
                 )
-                break
 
-            logger.info(f"Processing page {page_num}…")
-            quotes = self.scrape_quotes()
+                if not signature:
+                    logger.warning("Empty page signature, stopping.")
+                    break
 
-            if not quotes:
-                logger.warning(f"No quotes on page {page_num}, stopping.")
-                break
+                if last_signature and signature == last_signature:
+                    logger.info("Duplicate page detected – end of pagination.")
+                    break
 
-            signature = sorted(
-                str(q.get("requisition_number", "")) + str(q.get("summary", ""))
-                for q in quotes
-            )
+                last_signature = signature
+                all_quotes.extend(quotes)
+                # Fire per-quote callback so callers can update a live counter
+                if on_quote:
+                    for q in quotes:
+                        try:
+                            on_quote(q)
+                        except Exception as _cb_err:
+                            logger.warning(f"on_quote callback failed: {_cb_err}")
+                logger.info(
+                    f"Page {page_num}: {len(quotes)} quotes | total: {len(all_quotes)}"
+                )
 
-            if not signature:
-                logger.warning("Empty page signature, stopping.")
-                break
+                if not self._click_next_page():
+                    logger.info("No more pages.")
+                    break
 
-            if last_signature and signature == last_signature:
-                logger.info("Duplicate page detected – end of pagination.")
-                break
-
-            last_signature = signature
-            all_quotes.extend(quotes)
-            # Fire per-quote callback so callers can update a live counter
-            if on_quote:
-                for q in quotes:
-                    try:
-                        on_quote(q)
-                    except Exception as _cb_err:
-                        logger.warning(f"on_quote callback failed: {_cb_err}")
-            logger.info(
-                f"Page {page_num}: {len(quotes)} quotes | total: {len(all_quotes)}"
-            )
-
-            if not self._click_next_page():
-                logger.info("No more pages.")
-                break
-
-            page_num += 1
-            time.sleep(page_sleep)
+                page_num += 1
+                smart_sleep(page_sleep, self.stop_event)
+        except StopScraping:
+            logger.info(f"Stop signal received - returning {len(all_quotes)} partial quotes.")
+            return all_quotes
 
         if page_num > max_pages:
             logger.warning(f"Reached max page limit ({max_pages}).")
@@ -819,7 +829,7 @@ class SeptaPortal:
                         if any(kw in link.text.lower() for kw in keywords):
                             if link.is_displayed() and link.is_enabled():
                                 self.browser.safe_click(link, "procurement menu")
-                                time.sleep(self._t["navigation_sleep"])
+                                smart_sleep(self._t["navigation_sleep"], self.stop_event)
                                 return True
                 except Exception:
                     continue
@@ -959,7 +969,7 @@ class SeptaScraper:
             return False
 
         try:
-            self.portal = SeptaPortal(self.browser_manager, self.config)
+            self.portal = SeptaPortal(self.browser_manager, self.config, stop_event=stop_event)
 
             if not self.portal.login():
                 logger.error("Login failed. Exiting.")

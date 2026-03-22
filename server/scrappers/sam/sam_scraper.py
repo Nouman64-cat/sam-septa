@@ -40,6 +40,7 @@ try:
         is_valid_title, should_skip_bid, find_field, save_debug,
         DATE_PATTERN, ISO_DATE_RE, SLASH_DATE_RE, FULL_MONTH_RE,
     )
+    from scrappers.exceptions import StopScraping, check_stop, smart_sleep
     from scrappers.sam.extractors import (
         get_field as _get_field_standalone,
         regex_from_page_text as _regex_from_page_text_standalone,
@@ -397,6 +398,7 @@ class SAMGovScraper:
         }
 
         try:
+            check_stop(self._stop_event)
             self.driver.get(url)
             self._wait_for_page_load()
             # Wait for Angular to finish rendering field elements
@@ -404,11 +406,13 @@ class SAMGovScraper:
 
             # Scroll halfway down to trigger lazy-loaded content, then back up
             self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 2);")
-            time.sleep(1)
+            smart_sleep(1, self._stop_event)
             self.driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(0.5)
+            smart_sleep(0.5, self._stop_event)
 
+            check_stop(self._stop_event)
             self._random_delay()
+            check_stop(self._stop_event)
 
             # Re-parse after Angular has fully rendered
             soup = BeautifulSoup(self.driver.page_source, "html.parser")
@@ -695,7 +699,9 @@ class SAMGovScraper:
 
         while extracted_count < max_records:
             # ── Stop check ───────────────────────────────────────────────────
-            if self._stop_event and self._stop_event.is_set():
+            try:
+                check_stop(self._stop_event)
+            except StopScraping:
                 logger.info(
                     f"Stop signal received - saving {extracted_count} partial "
                     f"rows and exiting."
@@ -711,7 +717,7 @@ class SAMGovScraper:
                 # page 1 because there is no active search session yet.
                 page_url = self._build_page_url(1)
                 self.driver.get(page_url)
-                time.sleep(2)   # Angular routing startup
+                smart_sleep(2, self._stop_event)   # Angular routing startup
 
                 # Wait for result cards
                 has_cards = False
@@ -782,7 +788,9 @@ class SAMGovScraper:
                 # ── Per-bid stop check ───────────────────────────────────
                 # Checked here so Stop responds within ~1 bid (~10 s)
                 # instead of waiting for all candidates on the page.
-                if self._stop_event and self._stop_event.is_set():
+                try:
+                    check_stop(self._stop_event)
+                except StopScraping:
                     logger.info(
                         f"Stop signal received during bid extraction - "
                         f"saving {extracted_count} partial rows and exiting."
@@ -805,10 +813,14 @@ class SAMGovScraper:
 
                 details = None
                 try:
+                    check_stop(self._stop_event)
                     details = self.extract_details(
                         bid_url,
                         pre_updated_date=item.get("pre_extracted_updated_date", ""),
                     )
+                except StopScraping:
+                    logger.info("Stop signal received inside bid extraction - saving and exiting.")
+                    break
                 except Exception as _detail_err:
                     _emsg = str(_detail_err).lower()
                     # Browser was closed (manually or due to stop) — exit cleanly
