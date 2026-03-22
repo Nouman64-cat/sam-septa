@@ -12,7 +12,7 @@ import logging
 from selenium.webdriver.common.by import By
 
 try:
-    from sam.utils import (
+    from scrappers.sam.utils import (
         is_valid_title, check_updated_date_rule, matches_date_range,
         save_debug,
     )

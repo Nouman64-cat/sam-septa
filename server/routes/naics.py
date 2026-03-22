@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from db import engine
 from models import ScrapeJob, NaicsCode
-from naics.naics_scraper import NaicsCodeScraper
+from scrappers.naics.naics_scraper import NaicsCodeScraper
 
 router = APIRouter()
 

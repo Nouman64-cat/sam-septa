@@ -34,32 +34,32 @@ from selenium.webdriver.support.ui import WebDriverWait
 from bs4 import BeautifulSoup
 
 try:
-    from sam.utils import (
+    from scrappers.sam.utils import (
         parse_any_date, looks_like_date, clean_updated_date,
         matches_date_range, check_updated_date_rule,
         is_valid_title, should_skip_bid, find_field, save_debug,
         DATE_PATTERN, ISO_DATE_RE, SLASH_DATE_RE, FULL_MONTH_RE,
     )
-    from sam.extractors import (
+    from scrappers.sam.extractors import (
         get_field as _get_field_standalone,
         regex_from_page_text as _regex_from_page_text_standalone,
         regex_date_from_page as _regex_date_from_page_standalone,
         extract_description as _extract_description_standalone,
     )
-    from sam.csv_handler import (
+    from scrappers.sam.csv_handler import (
         resolve_output_dir as _resolve_output_dir,
         get_csv_filename as _get_csv_filename,
         init_csv as _init_csv,
         append_row as _append_row,
         save_csv as _save_csv,
     )
-    from sam.browser import (
+    from scrappers.sam.browser import (
         setup_driver as _setup_driver,
         wait_for_page_load as _wait_for_page_load,
         wait_for_angular as _wait_for_angular,
         random_delay as _random_delay,
     )
-    from sam.navigation import (
+    from scrappers.sam.navigation import (
         build_page_url as _build_page_url,
         verify_on_correct_page as _verify_on_correct_page,
         click_next_page as _click_next_page,
@@ -67,7 +67,7 @@ try:
         apply_naics_filter as _apply_naics_filter,
         is_past_date_window as _is_past_date_window,
     )
-    from sam.page_parser import (
+    from scrappers.sam.page_parser import (
         get_links_from_current_page as _get_links_from_current_page,
     )
 except ImportError:

@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 
 from db import engine
 from models import ScrapeJob, SamBid, SamScrapeRequest
-from sam.sam_scraper import SAMGovScraper
+from scrappers.sam.sam_scraper import SAMGovScraper
 
 router = APIRouter()
 

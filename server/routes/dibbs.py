@@ -8,7 +8,7 @@ from sqlmodel import Session
 
 from db import engine
 from models import DibbsBid
-from dibbs.dibbs_scraper import DibbsScraper
+from scrappers.dibbs.dibbs_scraper import DibbsScraper
 
 router = APIRouter()
 

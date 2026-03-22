@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 from db import engine
 from models import ScrapeJob, SeptaQuote, SeptaScrapeRequest
 
-from septa.septa_scraper import (
+from scrappers.septa.septa_scraper import (
     Config as SeptaConfig,
     BrowserManager as SeptaBrowser,
     SeptaPortal,

@@ -9,7 +9,7 @@ from sqlmodel import Session
 
 from db import engine
 from models import UnisonRequest, UnisonScrapeRequest
-from unison.unison_scraper import UnisonMarketplaceScraper
+from scrappers.unison.unison_scraper import UnisonMarketplaceScraper
 
 router = APIRouter()
 

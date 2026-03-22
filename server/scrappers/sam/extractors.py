@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
 
 try:
-    from sam.utils import find_field
+    from scrappers.sam.utils import find_field
 except ImportError:
     from utils import find_field
 
