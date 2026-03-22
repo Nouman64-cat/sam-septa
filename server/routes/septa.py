@@ -11,16 +11,12 @@ from sqlmodel import Session, select
 from database import engine
 from models import ScrapeJob, SeptaQuote, SeptaScrapeRequest
 
-# Import Septa Scraper
-try:
-    from septa_scrapper import (
-        Config as SeptaConfig,
-        BrowserManager as SeptaBrowser,
-        SeptaPortal,
-        DataExporter,
-    )
-except ImportError:
-    print("Error importing Septa scraper modules. Make sure septa_scrapper.py works.")
+from septa.septa_scraper import (
+    Config as SeptaConfig,
+    BrowserManager as SeptaBrowser,
+    SeptaPortal,
+    DataExporter,
+)
 
 router = APIRouter()
 
