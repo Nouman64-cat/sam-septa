@@ -8,7 +8,7 @@ Run ONCE from the server directory:
 Safe to re-run — uses IF EXISTS so it won't error on missing tables.
 """
 
-from database import engine, create_db_and_tables
+from db import engine, create_db_and_tables
 from sqlalchemy import text
 
 # ── Import all models so SQLModel.metadata knows about every table ────────────

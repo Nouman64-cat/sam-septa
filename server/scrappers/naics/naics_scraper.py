@@ -30,8 +30,9 @@ class NaicsCodeScraper:
             )
         })
 
-    def _stopped(self) -> bool:
-        return bool(self._stop_event and self._stop_event.is_set())
+    def _check_stop(self):
+        from scrappers.exceptions import check_stop
+        check_stop(self._stop_event)
 
     def run(self) -> int:
         """
@@ -53,20 +54,22 @@ class NaicsCodeScraper:
         logger.info(f"Found {len(code_divs)} naicscode divs on page")
 
         total = 0
-        for code_div, title_div in zip(code_divs, title_divs):
-            if self._stopped():
-                logger.info("Stop requested — halting NAICS scraper")
-                break
+        from scrappers.exceptions import StopScraping
+        try:
+            for code_div, title_div in zip(code_divs, title_divs):
+                self._check_stop()
 
-            code_text  = code_div.get_text(strip=True)
-            title_text = title_div.get_text(strip=True)
+                code_text  = code_div.get_text(strip=True)
+                title_text = title_div.get_text(strip=True)
 
-            # Only keep 6-digit leaf codes (skip 2/4-digit parent codes and headers)
-            if len(code_text) == 6 and code_text.isdigit():
-                item = {"code": code_text, "title": title_text}
-                if self._on_code_scraped:
-                    self._on_code_scraped(item)
-                total += 1
+                # Only keep 6-digit leaf codes (skip 2/4-digit parent codes and headers)
+                if len(code_text) == 6 and code_text.isdigit():
+                    item = {"code": code_text, "title": title_text}
+                    if self._on_code_scraped:
+                        self._on_code_scraped(item)
+                    total += 1
+        except StopScraping:
+            logger.info("NAICS scraping interrupted by user")
 
         logger.info(f"NAICS scraper finished — {total} codes yielded")
         return total
