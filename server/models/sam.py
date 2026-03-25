@@ -9,9 +9,10 @@ from pydantic import BaseModel
 
 
 class SamScrapeRequest(BaseModel):
-    date_filter: Optional[str] = None         # from-date  YYYY-MM-DD  (start of range)
-    date_to:     Optional[str] = None         # to-date    YYYY-MM-DD  (end   of range)
-    naics_codes: Optional[list[str]] = None   # list of 6-digit NAICS codes to filter
+    date_filter:  Optional[str]       = None   # from-date  YYYY-MM-DD  (start of range)
+    date_to:      Optional[str]       = None   # to-date    YYYY-MM-DD  (end   of range)
+    naics_codes:  Optional[list[str]] = None   # list of 6-digit NAICS codes to filter
+    award_notice: bool                = False  # include Award Notice type in URL filter
 
 
 class SamBid(SQLModel, table=True):

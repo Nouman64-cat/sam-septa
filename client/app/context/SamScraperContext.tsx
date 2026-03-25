@@ -25,6 +25,9 @@ interface SamScraperContextValue {
   // NAICS codes
   naicsCodes:    string[];
   setNaicsCodes: Dispatch<SetStateAction<string[]>>;
+  // Award Notice filter
+  awardNotice:    boolean;
+  setAwardNotice: Dispatch<SetStateAction<boolean>>;
   // Reset everything back to idle
   reset: () => void;
 }
@@ -38,21 +41,23 @@ const INITIAL: ScraperState = { status: "idle" };
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function SamScraperProvider({ children }: { children: ReactNode }) {
-  const [state,      setState]      = useState<ScraperState>(INITIAL);
-  const [dateFrom,   setDateFrom]   = useState("");
-  const [dateTo,     setDateTo]     = useState("");
-  const [naicsCodes, setNaicsCodes] = useState<string[]>([]);
+  const [state,       setState]       = useState<ScraperState>(INITIAL);
+  const [dateFrom,    setDateFrom]    = useState("");
+  const [dateTo,      setDateTo]      = useState("");
+  const [naicsCodes,  setNaicsCodes]  = useState<string[]>([]);
+  const [awardNotice, setAwardNotice] = useState(false);
 
   const reset = useCallback(() => {
     setState(INITIAL);
     setDateFrom("");
     setDateTo("");
     setNaicsCodes([]);
+    setAwardNotice(false);
   }, []);
 
   return (
     <SamScraperContext.Provider
-      value={{ state, setState, dateFrom, setDateFrom, dateTo, setDateTo, naicsCodes, setNaicsCodes, reset }}
+      value={{ state, setState, dateFrom, setDateFrom, dateTo, setDateTo, naicsCodes, setNaicsCodes, awardNotice, setAwardNotice, reset }}
     >
       {children}
     </SamScraperContext.Provider>

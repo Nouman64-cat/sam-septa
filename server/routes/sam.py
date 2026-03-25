@@ -69,10 +69,11 @@ async def scrape_sam(body: SamScrapeRequest):
     def _run():
         try:
             scraper = SAMGovScraper(
-                headless    = False,
-                date_filter = body.date_filter,
-                date_to     = body.date_to,
-                naics_codes = body.naics_codes,
+                headless     = False,
+                date_filter  = body.date_filter,
+                date_to      = body.date_to,
+                naics_codes  = body.naics_codes,
+                award_notice = body.award_notice,
             )
             scraper._stop_event       = stop_event
             scraper.skip_csv          = True      # no CSV files
