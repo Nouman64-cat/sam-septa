@@ -159,13 +159,15 @@ class SAMGovScraper:
         date_filter: str = None,   # kept for backward-compat; treated as date_from
         date_to: str = None,
         naics_codes: list[str] | None = None,
+        award_notice: bool = False,
     ):
         self._load_config()
 
-        self.headless    = headless
-        self.date_filter = date_filter      # YYYY-MM-DD  (from / start of range)
-        self.date_to     = date_to          # YYYY-MM-DD  (to   / end   of range)
-        self.naics_codes = naics_codes or []  # list of 6-digit NAICS codes to filter
+        self.headless     = headless
+        self.date_filter  = date_filter      # YYYY-MM-DD  (from / start of range)
+        self.date_to      = date_to          # YYYY-MM-DD  (to   / end   of range)
+        self.naics_codes  = naics_codes or []  # list of 6-digit NAICS codes to filter
+        self.award_notice = award_notice     # include Award Notice type in URL filter
 
         # Parsed datetime objects
         self.filter_date_from = None        # start of range
@@ -263,10 +265,20 @@ class SAMGovScraper:
     # ------------------------------------------------------------------
     def _build_page_url(self, page: int) -> str:
         """Delegates to navigation.build_page_url."""
+        award_notice_param = self._cfg.get("award_notice_param", "") or ""
+        # award_notice_param is stored under urls.sam in config, not under sam:
+        if not award_notice_param:
+            import yaml
+            cfg_file = _SAM_DIR / "config.yml"
+            with open(cfg_file, "r", encoding="utf-8") as f:
+                _raw = yaml.safe_load(f)
+            award_notice_param = _raw.get("urls", {}).get("sam", {}).get("award_notice_param", "")
         return _build_page_url(
             self.base_url, page, self.naics_codes,
             self.filter_date_from, self.filter_date_to,
             self._url_date_params, self.filter_date_obj,
+            award_notice=self.award_notice,
+            award_notice_param=award_notice_param,
         )
 
     # ------------------------------------------------------------------

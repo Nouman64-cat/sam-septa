@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## v1.0.1 - 2026-03-25
 
 ### Added
-- **Award Notice**: Modified the base_url in config.yml to include "Award Notice" in the typeOfNotice filter array.
+- **Award Notice**: Implemented a frontend UI toggle for "Award Notices," allowing the scraper's base URL to dynamically include or exclude historical contract awards based on user preference.
 
 ## v1.0.0 - 2026-03-21
 

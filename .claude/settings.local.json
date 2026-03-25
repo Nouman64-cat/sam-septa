@@ -8,7 +8,10 @@
       "mcp__Claude_Preview__preview_start",
       "Bash(curl -s http://127.0.0.1:8001/)",
       "Bash(curl -s \"http://127.0.0.1:8001/naics/search?q=111110\")",
-      "Bash(python -c \"import main; print\\(''OK''\\)\")"
+      "Bash(python -c \"import main; print\\(''OK''\\)\")",
+      "Bash(ls /c/projects/sam-septa/server/*.py)",
+      "Bash(.venv/Scripts/activate)",
+      "Bash(python -c \"import main; print\\(''''OK''''\\)\")"
     ]
   }
 }

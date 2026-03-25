@@ -28,13 +28,21 @@ def build_page_url(
     filter_date_to: datetime | None,
     url_date_params: dict,
     filter_date_obj: datetime | None = None,
+    award_notice: bool = False,
+    award_notice_param: str = "",
 ) -> str:
     """
     Build the full SAM.gov search URL for a given page number.
 
-    Appends server-side updatedDate range and NAICS code params when active.
+    Appends server-side updatedDate range, NAICS code params, and optionally
+    the Award Notice notice-type filter when award_notice=True.
     """
     url = base_url.format(page=page)
+
+    # Award Notice filter — appended only when user explicitly enables it
+    if award_notice and award_notice_param:
+        url += award_notice_param
+        logger.debug("Award Notice filter appended to URL")
 
     # NAICS code URL params
     if naics_codes:

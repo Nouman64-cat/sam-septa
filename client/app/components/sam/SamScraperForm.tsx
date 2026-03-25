@@ -23,6 +23,7 @@ export function SamScraperForm() {
     dateFrom, setDateFrom,
     dateTo, setDateTo,
     naicsCodes, setNaicsCodes,
+    awardNotice, setAwardNotice,
     reset,
   } = useSamScraper();
 
@@ -150,9 +151,10 @@ export function SamScraperForm() {
 
     try {
       const res = await scrapeSam({
-        date_filter: dateFrom || undefined,
-        date_to:     dateTo   || undefined,
-        naics_codes: naicsCodes.length > 0 ? naicsCodes : undefined,
+        date_filter:  dateFrom || undefined,
+        date_to:      dateTo   || undefined,
+        naics_codes:  naicsCodes.length > 0 ? naicsCodes : undefined,
+        award_notice: awardNotice || undefined,
       });
       if (res.success && res.job_id) {
         setState({ status: "running", jobId: res.job_id, recordCount: 0 });
@@ -268,6 +270,43 @@ export function SamScraperForm() {
                 </span>
               </div>
             </div>
+
+            {/* Divider */}
+            <div className="h-px bg-slate-100" />
+
+            {/* Award Notice checkbox */}
+            <label className="flex items-center gap-3 cursor-pointer group select-none">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={awardNotice}
+                  onChange={(e) => setAwardNotice(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className={[
+                  "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
+                  awardNotice
+                    ? "bg-blue-600 border-blue-600"
+                    : "bg-white border-slate-300 group-hover:border-blue-400",
+                ].join(" ")}>
+                  {awardNotice && (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </div>
+              </div>
+              <div>
+                <span className="text-sm font-medium text-slate-700">Award Notice</span>
+                <span className="ml-2 text-xs text-slate-400 font-normal">optional</span>
+              </div>
+              {awardNotice && (
+                <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-0.5 text-[11px] font-semibold">
+                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                  Active
+                </span>
+              )}
+            </label>
 
             {/* Divider */}
             <div className="h-px bg-slate-100" />
