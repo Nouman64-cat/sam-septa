@@ -161,13 +161,13 @@ class SAMGovScraper:
         naics_codes: list[str] | None = None,
         award_notice: bool = False,
     ):
+        self.award_notice = award_notice     # must be set BEFORE _load_config() reads it
         self._load_config()
 
         self.headless     = headless
         self.date_filter  = date_filter      # YYYY-MM-DD  (from / start of range)
         self.date_to      = date_to          # YYYY-MM-DD  (to   / end   of range)
         self.naics_codes  = naics_codes or []  # list of 6-digit NAICS codes to filter
-        self.award_notice = award_notice     # include Award Notice type in URL filter
 
         # Parsed datetime objects
         self.filter_date_from = None        # start of range

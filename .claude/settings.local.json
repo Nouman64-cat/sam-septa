@@ -11,7 +11,10 @@
       "Bash(python -c \"import main; print\\(''OK''\\)\")",
       "Bash(ls /c/projects/sam-septa/server/*.py)",
       "Bash(.venv/Scripts/activate)",
-      "Bash(python -c \"import main; print\\(''''OK''''\\)\")"
+      "Bash(python -c \"import main; print\\(''''OK''''\\)\")",
+      "Bash(curl -s http://localhost:3000/sam)",
+      "Bash(head -20 grep -n \"class SamScrapeRequest\\\\|award_notice\" C:/projects/sam-septa/server/models/*.py)",
+      "Bash(.venv/Scripts/python -c \":*)"
     ]
   }
 }
