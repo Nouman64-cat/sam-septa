@@ -233,10 +233,18 @@ class SAMGovScraper:
             raw = yaml.safe_load(f)
 
         self._cfg = raw.get("sam", {})
-        self.base_url = raw.get("urls", {}).get("sam", {}).get("base_url", "")
+        urls_sam = raw.get("urls", {}).get("sam", {})
 
-        if not self.base_url:
-            raise ValueError("urls.sam.base_url is missing from config.yml")
+        if self.award_notice:
+            # Award Notice mode: use dedicated URL that contains ONLY Award Notice
+            # as the notice type (no Solicitation or Combined Synopsis)
+            self.base_url = urls_sam.get("award_notice_base_url", "")
+            if not self.base_url:
+                raise ValueError("urls.sam.award_notice_base_url is missing from config.yml")
+        else:
+            self.base_url = urls_sam.get("base_url", "")
+            if not self.base_url:
+                raise ValueError("urls.sam.base_url is missing from config.yml")
 
         # Convenience shortcuts
         self._timeouts       = self._cfg.get("timeouts", {})
@@ -265,20 +273,14 @@ class SAMGovScraper:
     # ------------------------------------------------------------------
     def _build_page_url(self, page: int) -> str:
         """Delegates to navigation.build_page_url."""
-        award_notice_param = self._cfg.get("award_notice_param", "") or ""
-        # award_notice_param is stored under urls.sam in config, not under sam:
-        if not award_notice_param:
-            import yaml
-            cfg_file = _SAM_DIR / "config.yml"
-            with open(cfg_file, "r", encoding="utf-8") as f:
-                _raw = yaml.safe_load(f)
-            award_notice_param = _raw.get("urls", {}).get("sam", {}).get("award_notice_param", "")
+        # When award_notice=True, base_url is already the Award Notice-only URL,
+        # so award_notice_param must NOT be appended (it would duplicate the filter).
         return _build_page_url(
             self.base_url, page, self.naics_codes,
             self.filter_date_from, self.filter_date_to,
             self._url_date_params, self.filter_date_obj,
-            award_notice=self.award_notice,
-            award_notice_param=award_notice_param,
+            award_notice=False,       # never append param; base_url already encodes the intent
+            award_notice_param="",
         )
 
     # ------------------------------------------------------------------
