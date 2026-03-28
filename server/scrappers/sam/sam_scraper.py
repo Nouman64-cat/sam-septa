@@ -35,6 +35,7 @@ from bs4 import BeautifulSoup
 
 try:
     from scrappers.sam.documents import download_attachments as _download_attachments
+    from scrappers.sam.text_extractor import build_full_text as _build_full_text
     from scrappers.sam.utils import (
         parse_any_date, looks_like_date, clean_updated_date,
         matches_date_range, check_updated_date_rule,
@@ -74,6 +75,7 @@ try:
     )
 except ImportError:
     from documents import download_attachments as _download_attachments
+    from text_extractor import build_full_text as _build_full_text
     from utils import (
         parse_any_date, looks_like_date, clean_updated_date,
         matches_date_range, check_updated_date_rule,
@@ -628,6 +630,14 @@ class SAMGovScraper:
 
             notice_id_for_dir = data.get("Notice ID") or data.get("Notice Title", "unknown")
             _download_attachments(self.driver, notice_id_for_dir, self._temp_docs_dir)
+
+            # ── Build full text (description + extracted doc text) ───────
+            docs_folder = self._temp_docs_dir / notice_id_for_dir
+            data["Full Text"] = _build_full_text(data.get("Description", ""), docs_folder)
+            logger.info(
+                f"Full Text built: {len(data['Full Text']):,} chars "
+                f"(notice {notice_id_for_dir})"
+            )
 
             return data
 
