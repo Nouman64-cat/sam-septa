@@ -7,3 +7,4 @@ logs/
 .claude
 *.csv
 *.xlsx
+temp_docs

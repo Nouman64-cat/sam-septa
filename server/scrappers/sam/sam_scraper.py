@@ -23,6 +23,7 @@ Card-level pre-filters:
 """
 
 import os
+import shutil
 import time
 import logging
 from datetime import datetime
@@ -34,6 +35,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from bs4 import BeautifulSoup
 
 try:
+    from scrappers.sam.documents import download_attachments as _download_attachments
+    from scrappers.sam.text_extractor import build_full_text as _build_full_text
     from scrappers.sam.utils import (
         parse_any_date, looks_like_date, clean_updated_date,
         matches_date_range, check_updated_date_rule,
@@ -72,6 +75,8 @@ try:
         get_links_from_current_page as _get_links_from_current_page,
     )
 except ImportError:
+    from documents import download_attachments as _download_attachments
+    from text_extractor import build_full_text as _build_full_text
     from utils import (
         parse_any_date, looks_like_date, clean_updated_date,
         matches_date_range, check_updated_date_rule,
@@ -245,6 +250,10 @@ class SAMGovScraper:
             self.base_url = urls_sam.get("base_url", "")
             if not self.base_url:
                 raise ValueError("urls.sam.base_url is missing from config.yml")
+
+        # temp_docs directory — one sub-folder per notice ID
+        self._temp_docs_dir = _SAM_DIR / "temp_docs"
+        self._temp_docs_dir.mkdir(exist_ok=True)
 
         # Convenience shortcuts
         self._timeouts       = self._cfg.get("timeouts", {})
@@ -611,6 +620,33 @@ class SAMGovScraper:
             if skip:
                 logger.info(f"[SKIP] {reason} | {data['Notice Title']}")
                 return None
+
+            # ── Download attachments ─────────────────────────────────────
+            # Scroll to the Attachments/Links section so Angular renders it
+            try:
+                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1.5)
+            except Exception:
+                pass
+
+            notice_id_for_dir = data.get("Notice ID") or data.get("Notice Title", "unknown")
+            _download_attachments(self.driver, notice_id_for_dir, self._temp_docs_dir, stop_event=self._stop_event)
+
+            # ── Build full text (description + extracted doc text) ───────
+            docs_folder = self._temp_docs_dir / notice_id_for_dir
+            data["Full Text"] = _build_full_text(data.get("Description", ""), docs_folder)
+            logger.info(
+                f"Full Text built: {len(data['Full Text']):,} chars "
+                f"(notice {notice_id_for_dir})"
+            )
+
+            # ── Clean up downloaded files now that text is extracted ────
+            if docs_folder.exists():
+                try:
+                    shutil.rmtree(docs_folder)
+                    logger.info(f"Cleaned up temp docs: {docs_folder}")
+                except Exception as exc:
+                    logger.warning(f"Could not remove {docs_folder}: {exc}")
 
             return data
 

@@ -1,83 +1,34 @@
-# BidScraper Pro
+# SAM-SEPTA Scraper
 
-Scrapes federal solicitations from **SAM.gov** and vendor quotes from **SEPTA**, saves to PostgreSQL, exports Excel.
+This is a full-stack tool for scraping government bids (SAM.gov, SEPTA, Unison, DIBBS), equipped with a smart 4-layer evaluation pipeline that automatically rejects/passes bids.
 
-## Prerequisites
-
-- Node.js 18+, Python 3.12+, PostgreSQL 14+, Google Chrome, Git
-- ChromeDriver is auto-downloaded — no manual install needed
-
-## Setup
-
+## Requirements
+To run the automated bid evaluation (Layer 4), you must have **Ollama** installed on your system with the **Llama 3** model pulled:
 ```bash
-git clone <your-repo-url> sam-septa
-
-# Backend env
-cd sam-septa/server
-cp .env.example .env        # Windows: copy .env.example .env
-
-# Frontend env
-cd ../client
-cp .env.example .env
+ollama pull llama3
 ```
 
-**`server/.env`**
-```env
-DATABASE_URL=postgresql://username:password@localhost:5432/sam-septa-db
-SEPTA_USERNAME=your_septa_username
-SEPTA_PASSWORD=your_septa_password
-```
+## Running the Application
 
-**`client/.env`**
-```env
-NEXT_PUBLIC_SERVER_URL=http://127.0.0.1:8001
-```
+Once you have completed the initial setup, you can start the application by running the client and server concurrently in two separate terminal windows:
 
-## Database
-
-```bash
-psql -U postgres -c 'CREATE DATABASE "sam-septa-db";'
-```
-Tables are created automatically on first server start.
-
-## Run Backend
-
+**1. Start the Server (Backend)**
 ```bash
 cd server
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-source .venv/bin/activate       # Linux/macOS
-pip install -r requirements.txt
-uvicorn main:app --host 127.0.0.1 --port 8001 --reload
+.venv\Scripts\activate  # On Windows
+uvicorn main:app --reload
 ```
 
-## Run Frontend
-
+**2. Start the Client (Frontend)**
 ```bash
 cd client
-npm install
 npm run dev
 ```
-
-Open **http://localhost:3000**
-
-## Reset Database (schema changes only ⚠️ deletes all data)
-
-```bash
-cd server && python migrate.py
-```
-
-## Troubleshooting
-
-| Error | Fix |
-|-------|-----|
-| `No module named 'fastapi'` | Activate venv |
-| PostgreSQL connection refused | Start PostgreSQL service |
-| `password authentication failed` | Fix password in `.env` |
-| `database does not exist` | Run the `CREATE DATABASE` command above |
-| `Chrome failed to start` | Install/update Chrome |
-| SEPTA `Login failed` | Check credentials in `.env` |
-| Column not found / schema mismatch | `python migrate.py` |
+The application will be available at [http://localhost:3000](http://localhost:3000).
 
 ---
-*FastAPI · Next.js 16 · PostgreSQL · Selenium*
+
+### Setup Instructions
+If you have not set up the project yet, please refer to the respective setup guides:
+- **Server setup:** See [`server/README.md`](server/README.md)
+- **Client setup:** See [`client/README.md`](client/README.md)

@@ -934,7 +934,7 @@ class DataExporter:
             df = pd.DataFrame(rows)
             df.to_excel(filepath, index=False)
 
-            logger.info(f"Exported {len(quotes)} records → {filepath}")
+            logger.info(f"Exported {len(quotes)} records -> {filepath}")
             for i, q in enumerate(quotes[:3], 1):
                 logger.info(
                     f"  {i}. {q.get('requisition_number')}: "

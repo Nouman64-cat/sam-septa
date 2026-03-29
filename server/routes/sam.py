@@ -1,16 +1,26 @@
-"""SAM.gov scraper routes — scrape + export."""
+"""SAM.gov scraper routes — scrape + export + evaluate."""
 
 import threading
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
+import yaml
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlmodel import Session, select
 
 from db import engine
-from models import ScrapeJob, SamBid, SamScrapeRequest
+from models import ScrapeJob, SamBid, SamScrapeRequest, SamEvaluateRequest
+from models.eval_config import EvalConfig
 from scrappers.sam.sam_scraper import SAMGovScraper
+from scrappers.sam.evaluator import evaluate_bid
+
+
+# ── Load SAM config once at module level ──────────────────────────────────────
+_SAM_CFG_PATH = Path(__file__).resolve().parent.parent / "scrappers" / "sam" / "config.yml"
+with open(_SAM_CFG_PATH, "r", encoding="utf-8") as _f:
+    _SAM_CONFIG = yaml.safe_load(_f).get("sam", {})
 
 router = APIRouter()
 
@@ -46,11 +56,61 @@ async def scrape_sam(body: SamScrapeRequest):
         s.commit()
 
     def _on_bid(bid: dict):
-        """Called per extracted bid — inserts to DB and updates live counter."""
+        """Called per extracted bid — evaluates, then inserts to DB and updates live counter."""
+        # Run the 4-layer evaluator using the Full Text already in memory.
+        # Kill words + allowed states are fetched live from DB so UI changes
+        # take effect immediately without a server restart.
+        #
+        # Logic: restricted_territories = KNOWN_NON_MAINLAND - allowed_states
+        # i.e. any known non-mainland territory that hasn't been explicitly allowed
+        # will trigger the LLM analysis layer.
+        full_text = bid.get("Full Text", "")
+        notice_id = bid.get("Notice ID") or bid.get("Notice Title", "unknown")
+
+        # Comprehensive list of all US states + DC + territories.
+        # restricted = everything NOT in the user's allowed_states list.
+        _ALL_US_REGIONS = {
+            "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+            "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
+            "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana",
+            "maine", "maryland", "massachusetts", "michigan", "minnesota",
+            "mississippi", "missouri", "montana", "nebraska", "nevada",
+            "new hampshire", "new jersey", "new mexico", "new york",
+            "north carolina", "north dakota", "ohio", "oklahoma", "oregon",
+            "pennsylvania", "rhode island", "south carolina", "south dakota",
+            "tennessee", "texas", "utah", "vermont", "virginia", "washington",
+            "west virginia", "wisconsin", "wyoming",
+            "district of columbia", "washington dc",
+            "puerto rico", "guam", "us virgin islands",
+            "american samoa", "northern mariana islands",
+        }
+
+        try:
+            with Session(engine) as _es:
+                cfg_rows = _es.exec(select(EvalConfig)).all()
+            kill_words     = [r.value for r in cfg_rows if r.category == "kill_word"]
+            allowed_states = {r.value for r in cfg_rows if r.category == "allowed_state"}
+            # Every region not explicitly allowed becomes a tripwire
+            restricted_territories = list(_ALL_US_REGIONS - allowed_states)
+
+            # Merge into YAML config dict for evaluator compatibility
+            _eval_cfg = dict(_SAM_CONFIG)
+            _eval_cfg.setdefault("evaluation", {})
+            _eval_cfg["evaluation"] = dict(_eval_cfg["evaluation"])
+            _eval_cfg["evaluation"]["kill_words"]            = kill_words
+            _eval_cfg["evaluation"]["restricted_territories"] = restricted_territories
+
+            eval_result = evaluate_bid(notice_id, full_text, _eval_cfg)
+            decision = eval_result.get("decision", "PENDING")
+            reason   = eval_result.get("reason", "")
+        except Exception as _eval_err:
+            decision = "PENDING"
+            reason   = f"Evaluation error: {_eval_err}"
+
         with Session(engine) as s:
             s.add(SamBid(
                 job_id           = job_id,
-                notice_id        = bid.get("Notice ID", ""),
+                notice_id        = notice_id,
                 title            = bid.get("Notice Title", ""),
                 department       = bid.get("Department/Ind. Agency", ""),
                 subtier          = bid.get("Subtier", ""),
@@ -62,6 +122,8 @@ async def scrape_sam(body: SamScrapeRequest):
                 naics_title      = bid.get("NAICS Title", ""),
                 date_offers_due  = bid.get("Date Offers Due", ""),
                 published_date   = bid.get("Published Date", ""),
+                decision         = decision,
+                reason           = reason,
             ))
             s.commit()
         _jobs[job_id]["record_count"] += 1
@@ -111,14 +173,15 @@ async def export_sam(job_id: Optional[str] = Query(default=None)):
         bids = s.exec(query.order_by(SamBid.scraped_at.desc())).all()
 
     headers = [
-        "Notice Title", "Notice ID", "Department/Ind. Agency",
-        "Description", "Subtier", "Updated Date",
+        "Notice Title", "Notice ID", "Decision", "Reason",
+        "Department/Ind. Agency", "Description", "Subtier", "Updated Date",
         "Bid Repeat Count", "NAICS Code", "NAICS Title",
         "Date Offers Due", "Published Date", "Office",
     ]
     rows = [
         [
-            b.title, b.notice_id, b.department, b.description,
+            b.title, b.notice_id, b.decision or "PENDING", b.reason or "",
+            b.department, b.description,
             b.subtier, b.updated_date, b.bid_repeat_count,
             b.naics_code, b.naics_title,
             b.date_offers_due, b.published_date, b.office,
@@ -136,3 +199,21 @@ async def export_sam(job_id: Optional[str] = Query(default=None)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Evaluate
+# ---------------------------------------------------------------------------
+
+@router.post("/evaluate-sam")
+async def evaluate_sam(body: SamEvaluateRequest):
+    """
+    4-layer smart bid evaluator.
+
+    Accepts bid_id + full_text, returns PASS / REJECT with reasoning.
+    Layers: Kill-Word → Geographic → Context Extraction → Ollama LLM.
+    """
+    result = evaluate_bid(body.bid_id, body.full_text, _SAM_CONFIG)
+
+    status_code = 503 if result["decision"] == "ERROR" else 200
+    return JSONResponse(content=result, status_code=status_code)

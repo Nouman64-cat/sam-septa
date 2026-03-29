@@ -7,17 +7,19 @@ Usage unchanged:
 """
 
 from models.scrape_job import ScrapeJob
-from models.sam import SamBid, SamScrapeRequest
+from models.sam import SamBid, SamScrapeRequest, SamEvaluateRequest, SamEvaluateResponse
 from models.septa import SeptaQuote, SeptaScrapeRequest
 from models.naics import NaicsCode
 from models.unison import UnisonRequest, UnisonScrapeRequest
 from models.dibbs import DibbsBid
+from models.eval_config import EvalConfig
 
 __all__ = [
     "ScrapeJob",
-    "SamBid", "SamScrapeRequest",
+    "SamBid", "SamScrapeRequest", "SamEvaluateRequest", "SamEvaluateResponse",
     "SeptaQuote", "SeptaScrapeRequest",
     "NaicsCode",
     "UnisonRequest", "UnisonScrapeRequest",
     "DibbsBid",
+    "EvalConfig",
 ]

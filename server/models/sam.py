@@ -8,6 +8,26 @@ from sqlmodel import SQLModel, Field
 from pydantic import BaseModel
 
 
+class SamEvaluateRequest(BaseModel):
+    """Request body for POST /evaluate-sam."""
+    bid_id:    str
+    full_text: str
+
+
+class SamEvaluateResponse(BaseModel):
+    """Response body for POST /evaluate-sam."""
+    bid_id:             str
+    decision:           str                    # "PASS" | "REJECT" | "ERROR"
+    stopped_at_layer:   int                    # 1-4
+    reason:             str
+    kill_word_found:    Optional[str] = None
+    territory_found:    Optional[str] = None
+    context_snippet:    Optional[str] = None
+    llm_classification: Optional[str] = None
+    llm_raw_response:   Optional[str] = None
+    elapsed_ms:         float
+
+
 class SamScrapeRequest(BaseModel):
     date_filter:  Optional[str]       = None   # from-date  YYYY-MM-DD  (start of range)
     date_to:      Optional[str]       = None   # to-date    YYYY-MM-DD  (end   of range)
@@ -37,5 +57,8 @@ class SamBid(SQLModel, table=True):
     naics_title:      str           = Field(default="", max_length=500)
     date_offers_due:  str           = Field(default="", max_length=50)
     published_date:   str           = Field(default="", max_length=50)
+    # ── Evaluation results (populated inline during scraping) ─────────────────
+    decision:         Optional[str] = Field(default=None, max_length=10)   # PASS|REJECT|ERROR|PENDING
+    reason:           Optional[str] = Field(default=None, sa_column=Column(Text))
     # ── Metadata ──────────────────────────────────────────────────────────────
     scraped_at:       datetime      = Field(default_factory=datetime.utcnow)
