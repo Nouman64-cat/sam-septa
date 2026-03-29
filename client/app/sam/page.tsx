@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Navbar } from "../components/landing/Navbar";
 import { SiteFooter } from "../components/landing/SiteFooter";
-import { SamScraperForm } from "../components/sam/SamScraperForm";
+import { SamTabs } from "../components/sam/SamTabs";
 
 export default function SamPage() {
   return (
@@ -91,9 +91,9 @@ export default function SamPage() {
             </div>
           </div>
 
-          {/* ── Right column: Scraper form (3/5) ── */}
+          {/* ── Right column: Tabbed scraper + evaluator (3/5) ── */}
           <div className="lg:col-span-3">
-            <SamScraperForm />
+            <SamTabs />
           </div>
 
         </div>

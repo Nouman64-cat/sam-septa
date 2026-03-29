@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 
 from db import engine
 from models import ScrapeJob, SamBid, SamScrapeRequest, SamEvaluateRequest
+from models.eval_config import EvalConfig
 from scrappers.sam.sam_scraper import SAMGovScraper
 from scrappers.sam.evaluator import evaluate_bid
 
@@ -56,11 +57,38 @@ async def scrape_sam(body: SamScrapeRequest):
 
     def _on_bid(bid: dict):
         """Called per extracted bid — evaluates, then inserts to DB and updates live counter."""
-        # Run the 4-layer evaluator using the Full Text already in memory
+        # Run the 4-layer evaluator using the Full Text already in memory.
+        # Kill words + allowed states are fetched live from DB so UI changes
+        # take effect immediately without a server restart.
+        #
+        # Logic: restricted_territories = KNOWN_NON_MAINLAND - allowed_states
+        # i.e. any known non-mainland territory that hasn't been explicitly allowed
+        # will trigger the LLM analysis layer.
         full_text = bid.get("Full Text", "")
         notice_id = bid.get("Notice ID") or bid.get("Notice Title", "unknown")
+
+        # All known non-mainland US territories (superset to diff against)
+        _KNOWN_NON_MAINLAND = {
+            "guam", "puerto rico", "us virgin islands", "american samoa",
+            "northern mariana islands", "washington dc", "district of columbia",
+        }
+
         try:
-            eval_result = evaluate_bid(notice_id, full_text, _SAM_CONFIG)
+            with Session(engine) as _es:
+                cfg_rows = _es.exec(select(EvalConfig)).all()
+            kill_words    = [r.value for r in cfg_rows if r.category == "kill_word"]
+            allowed_states = {r.value for r in cfg_rows if r.category == "allowed_state"}
+            # Anything in KNOWN_NON_MAINLAND that is NOT explicitly allowed is restricted
+            restricted_territories = list(_KNOWN_NON_MAINLAND - allowed_states)
+
+            # Merge into YAML config dict for evaluator compatibility
+            _eval_cfg = dict(_SAM_CONFIG)
+            _eval_cfg.setdefault("evaluation", {})
+            _eval_cfg["evaluation"] = dict(_eval_cfg["evaluation"])
+            _eval_cfg["evaluation"]["kill_words"]            = kill_words
+            _eval_cfg["evaluation"]["restricted_territories"] = restricted_territories
+
+            eval_result = evaluate_bid(notice_id, full_text, _eval_cfg)
             decision = eval_result.get("decision", "PENDING")
             reason   = eval_result.get("reason", "")
         except Exception as _eval_err:

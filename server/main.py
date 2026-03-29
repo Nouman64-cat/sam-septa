@@ -110,12 +110,14 @@ from routes.septa import router as septa_router
 from routes.unison import router as unison_router
 from routes.dibbs import router as dibbs_router
 from routes.naics import router as naics_router
+from routes.eval_config import router as eval_config_router
 
 app.include_router(sam_router)
 app.include_router(septa_router)
 app.include_router(unison_router)
 app.include_router(dibbs_router)
 app.include_router(naics_router)
+app.include_router(eval_config_router)
 
 
 # ── Misc ──────────────────────────────────────────────────────────────────────

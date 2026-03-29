@@ -12,6 +12,7 @@ from models.septa import SeptaQuote, SeptaScrapeRequest
 from models.naics import NaicsCode
 from models.unison import UnisonRequest, UnisonScrapeRequest
 from models.dibbs import DibbsBid
+from models.eval_config import EvalConfig
 
 __all__ = [
     "ScrapeJob",
@@ -20,4 +21,5 @@ __all__ = [
     "NaicsCode",
     "UnisonRequest", "UnisonScrapeRequest",
     "DibbsBid",
+    "EvalConfig",
 ]
