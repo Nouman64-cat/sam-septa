@@ -94,6 +94,33 @@ sam:
       - "defense logistics agency"
 
   # --------------------------------------------------------------------------
+  # Bid evaluation (4-layer smart filter for /evaluate-sam endpoint)
+  # --------------------------------------------------------------------------
+  evaluation:
+    # Layer 1: kill-words — instant REJECT if found anywhere in full_text
+    kill_words:
+      - "idiq"
+      - "market research"
+      - "rfi"
+      - "sources sought"
+
+    # Layer 2: restricted territories — triggers LLM analysis if found
+    restricted_territories:
+      - "guam"
+      - "puerto rico"
+      - "us virgin islands"
+      - "american samoa"
+      - "northern mariana islands"
+
+    # Layer 3: context extraction
+    context_max_chars: 1000        # ~250 tokens
+    paragraph_window: 1            # ±1 paragraphs around match
+
+    # Layer 4: Ollama / LLM settings
+    ollama_model: "llama3"
+    ollama_timeout: 30             # seconds
+
+  # --------------------------------------------------------------------------
   # Date parsing
   # --------------------------------------------------------------------------
   date_parsing:
