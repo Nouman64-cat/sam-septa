@@ -214,7 +214,7 @@ def evaluate_bid(bid_id: str, full_text: str, config: dict) -> dict:
         result.update(
             decision="PASS",
             stopped_at_layer=2,
-            reason="Mainland USA default",
+            reason="No restricted territory found — within allowed regions",
         )
         result["elapsed_ms"] = (time.perf_counter() - t0) * 1000
         logger.info(f"[EVAL] {bid_id} -> PASS @ Layer 2 (no restricted territory)")

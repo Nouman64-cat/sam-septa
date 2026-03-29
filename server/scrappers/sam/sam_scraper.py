@@ -23,6 +23,7 @@ Card-level pre-filters:
 """
 
 import os
+import shutil
 import time
 import logging
 from datetime import datetime
@@ -629,7 +630,7 @@ class SAMGovScraper:
                 pass
 
             notice_id_for_dir = data.get("Notice ID") or data.get("Notice Title", "unknown")
-            _download_attachments(self.driver, notice_id_for_dir, self._temp_docs_dir)
+            _download_attachments(self.driver, notice_id_for_dir, self._temp_docs_dir, stop_event=self._stop_event)
 
             # ── Build full text (description + extracted doc text) ───────
             docs_folder = self._temp_docs_dir / notice_id_for_dir
@@ -638,6 +639,14 @@ class SAMGovScraper:
                 f"Full Text built: {len(data['Full Text']):,} chars "
                 f"(notice {notice_id_for_dir})"
             )
+
+            # ── Clean up downloaded files now that text is extracted ────
+            if docs_folder.exists():
+                try:
+                    shutil.rmtree(docs_folder)
+                    logger.info(f"Cleaned up temp docs: {docs_folder}")
+                except Exception as exc:
+                    logger.warning(f"Could not remove {docs_folder}: {exc}")
 
             return data
 

@@ -293,7 +293,7 @@ def apply_ui_date_filters(
     if from_ok:
         time.sleep(wait_sec)
         logger.info(
-            f"UI date filters applied: {from_str} → {to_str} | "
+            f"UI date filters applied: {from_str} -> {to_str} | "
             f"updatedDate(from={'OK' if from_ok else 'FAIL'}, to={'OK' if to_ok else 'FAIL'})"
         )
     else:

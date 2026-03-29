@@ -22,6 +22,7 @@ Key design decisions
 import logging
 import os
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -53,13 +54,21 @@ def _set_download_dir(driver, directory: str) -> None:
     )
 
 
-def _wait_for_download(download_dir: Path, timeout: int = _DOWNLOAD_TIMEOUT) -> bool:
+def _wait_for_download(
+    download_dir: Path,
+    timeout: int = _DOWNLOAD_TIMEOUT,
+    stop_event: threading.Event | None = None,
+) -> bool:
     """
     Block until no .crdownload / .tmp files remain in *download_dir*.
     Returns True if the download completed within *timeout* seconds.
+    Returns False immediately if *stop_event* is set.
     """
     deadline = time.time() + timeout
     while time.time() < deadline:
+        if stop_event and stop_event.is_set():
+            logger.info("  Download interrupted by stop signal.")
+            return False
         in_progress = list(download_dir.glob("*.crdownload")) + list(download_dir.glob("*.tmp"))
         if not in_progress:
             return True
@@ -71,6 +80,7 @@ def download_attachments(
     driver,
     notice_id: str,
     base_temp_dir: Path,
+    stop_event: threading.Event | None = None,
 ) -> list[str]:
     """
     Download all public attachments visible on the currently-loaded
@@ -81,6 +91,7 @@ def download_attachments(
     driver        : active Selenium WebDriver (already on the detail page)
     notice_id     : SAM.gov opportunity notice ID — used as the sub-folder name
     base_temp_dir : absolute path to  scrappers/sam/temp_docs/
+    stop_event    : optional threading.Event checked between downloads
 
     Returns
     -------
@@ -108,6 +119,11 @@ def download_attachments(
     downloaded: list[str] = []
 
     for link in file_links:
+        # Check stop signal before each file
+        if stop_event and stop_event.is_set():
+            logger.info("  Stop signal — aborting remaining downloads.")
+            break
+
         filename = link.text.strip()
         if not filename:
             continue
@@ -121,7 +137,7 @@ def download_attachments(
             link.click()
 
             # Wait for Chrome to finish the download
-            finished = _wait_for_download(download_dir)
+            finished = _wait_for_download(download_dir, stop_event=stop_event)
             if finished:
                 downloaded.append(filename)
                 logger.info(f"  [OK] {filename}")

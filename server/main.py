@@ -65,8 +65,16 @@ def _styled_workbook(sheet_name: str, headers: list[str], rows: list[list]) -> i
     ws.row_dimensions[1].height = 30
 
     # Data rows
-    for row in rows:
+    _REJECT_FILL = PatternFill("solid", fgColor="FFCCCC") # Light red
+    
+    # Find decision column index if it exists
+    dec_idx = headers.index("Decision") if "Decision" in headers else -1
+
+    for row_idx, row in enumerate(rows, start=2): # Data starts at row 2
         ws.append(row)
+        if dec_idx != -1 and row[dec_idx] == "REJECT":
+            for cell in ws[row_idx]:
+                cell.fill = _REJECT_FILL
 
     # Auto-fit column widths (capped at 60)
     for col in ws.columns:

@@ -67,19 +67,31 @@ async def scrape_sam(body: SamScrapeRequest):
         full_text = bid.get("Full Text", "")
         notice_id = bid.get("Notice ID") or bid.get("Notice Title", "unknown")
 
-        # All known non-mainland US territories (superset to diff against)
-        _KNOWN_NON_MAINLAND = {
-            "guam", "puerto rico", "us virgin islands", "american samoa",
-            "northern mariana islands", "washington dc", "district of columbia",
+        # Comprehensive list of all US states + DC + territories.
+        # restricted = everything NOT in the user's allowed_states list.
+        _ALL_US_REGIONS = {
+            "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+            "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
+            "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana",
+            "maine", "maryland", "massachusetts", "michigan", "minnesota",
+            "mississippi", "missouri", "montana", "nebraska", "nevada",
+            "new hampshire", "new jersey", "new mexico", "new york",
+            "north carolina", "north dakota", "ohio", "oklahoma", "oregon",
+            "pennsylvania", "rhode island", "south carolina", "south dakota",
+            "tennessee", "texas", "utah", "vermont", "virginia", "washington",
+            "west virginia", "wisconsin", "wyoming",
+            "district of columbia", "washington dc",
+            "puerto rico", "guam", "us virgin islands",
+            "american samoa", "northern mariana islands",
         }
 
         try:
             with Session(engine) as _es:
                 cfg_rows = _es.exec(select(EvalConfig)).all()
-            kill_words    = [r.value for r in cfg_rows if r.category == "kill_word"]
+            kill_words     = [r.value for r in cfg_rows if r.category == "kill_word"]
             allowed_states = {r.value for r in cfg_rows if r.category == "allowed_state"}
-            # Anything in KNOWN_NON_MAINLAND that is NOT explicitly allowed is restricted
-            restricted_territories = list(_KNOWN_NON_MAINLAND - allowed_states)
+            # Every region not explicitly allowed becomes a tripwire
+            restricted_territories = list(_ALL_US_REGIONS - allowed_states)
 
             # Merge into YAML config dict for evaluator compatibility
             _eval_cfg = dict(_SAM_CONFIG)
