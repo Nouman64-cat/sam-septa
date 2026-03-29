@@ -23,12 +23,12 @@ function Tag({
 }) {
   const base =
     color === "red"
-      ? "bg-red-50 border-red-100 text-red-700"
-      : "bg-emerald-50 border-emerald-100 text-emerald-700";
+      ? "bg-red-600 border-red-700 text-white"
+      : "bg-emerald-600 border-emerald-700 text-white";
   const btn =
     color === "red"
-      ? "text-red-400 hover:text-white hover:bg-red-500"
-      : "text-emerald-400 hover:text-white hover:bg-emerald-500";
+      ? "text-red-200 hover:text-white hover:bg-red-800"
+      : "text-emerald-200 hover:text-white hover:bg-emerald-800";
 
   return (
     <span
@@ -65,12 +65,12 @@ function AddRow({
 
   const focusRing =
     accent === "red"
-      ? "focus:border-red-300 focus:ring-red-100"
-      : "focus:border-emerald-300 focus:ring-emerald-100";
+      ? "focus:border-red-400 focus:ring-red-200"
+      : "focus:border-emerald-400 focus:ring-emerald-200";
   const btnColor =
     accent === "red"
-      ? "bg-red-600 hover:bg-red-700 disabled:bg-red-200"
-      : "bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-200";
+      ? "bg-red-600 hover:bg-red-700 disabled:bg-red-300"
+      : "bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300";
 
   async function handleAdd() {
     const trimmed = val.trim().toLowerCase();
@@ -228,13 +228,14 @@ export function EvalConfigPanel({ defaultOpen = false }: { defaultOpen?: boolean
             </div>
           )}
 
-          {/* ── Kill Words ── */}
-          <div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* ── Kill Words ── */}
+            <div className="flex flex-col h-full">
             <div className="flex items-center gap-2 mb-3">
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-100 text-red-600 text-[10px] font-bold">✕</span>
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-600 text-white text-[10px] font-bold">✕</span>
               <p className="text-sm font-semibold text-slate-700">Kill Words</p>
               <span className="text-xs text-slate-400">— instant REJECT if found in bid text</span>
-              <span className="ml-auto inline-flex items-center rounded-full bg-red-50 border border-red-100 text-red-600 px-2 py-0.5 text-[11px] font-semibold">
+              <span className="ml-auto inline-flex items-center rounded-full bg-red-600 text-white px-2.5 py-0.5 text-[11px] font-bold">
                 {killWords.length}
               </span>
             </div>
@@ -254,24 +255,23 @@ export function EvalConfigPanel({ defaultOpen = false }: { defaultOpen?: boolean
               <p className="text-xs text-slate-400 italic">No kill words configured.</p>
             )}
 
-            <AddRow
-              placeholder='Add kill word, e.g. "idiq"'
-              onAdd={handleAddKillWord}
-              loading={loadingKW}
-              accent="red"
-            />
+            <div className="mt-auto">
+              <AddRow
+                placeholder='Add kill word, e.g. "idiq"'
+                onAdd={handleAddKillWord}
+                loading={loadingKW}
+                accent="red"
+              />
+            </div>
           </div>
 
-          {/* Divider */}
-          <div className="h-px bg-slate-100" />
-
           {/* ── Allowed States ── */}
-          <div>
+          <div className="flex flex-col h-full">
             <div className="flex items-center gap-2 mb-3">
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] font-bold">✓</span>
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">✓</span>
               <p className="text-sm font-semibold text-slate-700">Allowed States</p>
               <span className="text-xs text-slate-400">— locations we can deliver to</span>
-              <span className="ml-auto inline-flex items-center rounded-full bg-emerald-50 border border-emerald-100 text-emerald-600 px-2 py-0.5 text-[11px] font-semibold">
+              <span className="ml-auto inline-flex items-center rounded-full bg-emerald-600 text-white px-2.5 py-0.5 text-[11px] font-bold">
                 {allowedStates.length}
               </span>
             </div>
@@ -296,12 +296,15 @@ export function EvalConfigPanel({ defaultOpen = false }: { defaultOpen?: boolean
               <p className="text-xs text-slate-400 italic">No allowed states configured — all territories will be flagged.</p>
             )}
 
-            <AddRow
-              placeholder='Add state, e.g. "alaska"'
-              onAdd={handleAddAllowedState}
-              loading={loadingAS}
-              accent="emerald"
-            />
+            <div className="mt-auto">
+              <AddRow
+                placeholder='Add state, e.g. "alaska"'
+                onAdd={handleAddAllowedState}
+                loading={loadingAS}
+                accent="emerald"
+              />
+            </div>
+          </div>
           </div>
 
           {/* Info callout */}

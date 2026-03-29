@@ -25,7 +25,7 @@ export function SamTabs() {
   return (
     <div>
       {/* Tab bar */}
-      <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-0">
+      <div className="flex gap-1.5 bg-slate-100 rounded-xl p-1.5 mb-0">
         {TABS.map((tab) => {
           const isActive = active === tab.id;
           return (
@@ -34,13 +34,13 @@ export function SamTabs() {
               type="button"
               onClick={() => setActive(tab.id)}
               className={[
-                "flex-1 flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all duration-150",
+                "flex-1 flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold transition-all duration-150",
                 isActive
-                  ? "bg-white text-slate-800 shadow-sm shadow-slate-200/60"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-white/50",
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-white/70",
               ].join(" ")}
             >
-              <span className={isActive ? "text-blue-600" : "text-slate-400"}>{tab.icon}</span>
+              <span className={isActive ? "text-blue-100" : "text-slate-400"}>{tab.icon}</span>
               {tab.label}
             </button>
           );
