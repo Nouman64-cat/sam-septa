@@ -5,7 +5,7 @@ import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
 import { StatusBadge } from "../ui/StatusBadge";
 import { scrapeSam } from "../../services/samService";
-import { stopJob } from "../../services/jobService";
+import { stopJob, getJobScreenshot } from "../../services/jobService";
 import { exportSam } from "../../services/exportService";
 import { searchNaics, getNaicsCount } from "../../services/naicsService";
 import { useJobPoller } from "../../hooks/useJobPoller";
@@ -30,6 +30,9 @@ export function SamScraperForm() {
   // Transient UI-only state (no need to persist)
   const [rangeError, setRangeError] = useState<string | null>(null);
   const [stopping,   setStopping]   = useState(false);
+  const [showLive, setShowLive] = useState(false);
+  const [screenshot, setScreenshot] = useState<string | null>(null);
+  const [loadingScreen, setLoadingScreen] = useState(false);
 
   // NAICS search state
   const [naicsQuery,   setNaicsQuery]   = useState("");
@@ -179,6 +182,34 @@ export function SamScraperForm() {
     try { await stopJob(state.jobId); }
     catch { setStopping(false); }
   }
+
+  async function handleViewLive() {
+    if (!state.jobId) return;
+    setShowLive(true);
+    setLoadingScreen(true);
+    try {
+      const res = await getJobScreenshot(state.jobId);
+      setScreenshot(res.screenshot);
+    } catch (err) {
+      toast("error", "Failed to get screenshot", "Is the scraper still running?");
+    } finally {
+      setLoadingScreen(false);
+    }
+  }
+
+  // Refresh screenshot when live view is open
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (showLive && state.jobId && state.status === "running") {
+      interval = setInterval(async () => {
+        try {
+          const res = await getJobScreenshot(state.jobId!);
+          setScreenshot(res.screenshot);
+        } catch {}
+      }, 5000);
+    }
+    return () => clearInterval(interval);
+  }, [showLive, state.jobId, state.status]);
 
   function handleExport() {
     exportSam(state.jobId);
@@ -455,10 +486,15 @@ export function SamScraperForm() {
             </div>
 
             <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-100">
-              <p className="text-sm text-slate-500">Stopping gracefully saves all collected bids.</p>
-              <Button variant="danger" loading={stopping} onClick={handleStop} className="shrink-0">
-                {stopping ? "Stopping…" : "Stop Scraping"}
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={handleViewLive} className="shrink-0 !px-4">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  View Live
+                </Button>
+                <Button variant="danger" loading={stopping} onClick={handleStop} className="shrink-0">
+                  {stopping ? "Stopping…" : "Stop Scraping"}
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -516,6 +552,71 @@ export function SamScraperForm() {
         )}
 
       </div>
+
+      {/* ── Live Preview Modal ── */}
+      {showLive && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Live Scraper Preview</h3>
+                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">SAM.gov Browser Session</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-[11px] font-semibold text-emerald-600 uppercase tracking-tight">Live Session</span>
+                </div>
+                <button 
+                  onClick={() => setShowLive(false)}
+                  className="p-2 hover:bg-slate-200/50 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="bg-slate-900 aspect-video relative flex items-center justify-center group">
+              {loadingScreen && !screenshot ? (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
+                  <p className="text-xs font-medium text-slate-400">Connecting to browser…</p>
+                </div>
+              ) : screenshot ? (
+                <img 
+                  src={`data:image/png;base64,${screenshot}`} 
+                  alt="Scraper Preview" 
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <p className="text-sm text-slate-500 font-medium">Waiting for first frame…</p>
+              )}
+              
+              {/* Overlay info */}
+              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <div className="px-3 py-1.5 bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700/50">
+                  <p className="text-[10px] text-slate-300 font-mono">Status: {state.status} | Bids: {state.recordCount}</p>
+                </div>
+                <p className="text-[10px] text-slate-500 font-medium">Auto-refreshing every 5s</p>
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-50 flex items-center justify-end border-t border-slate-100">
+              <Button variant="secondary" onClick={() => setShowLive(false)}>
+                Close Preview
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

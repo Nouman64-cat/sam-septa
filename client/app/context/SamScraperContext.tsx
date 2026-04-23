@@ -28,6 +28,8 @@ interface SamScraperContextValue {
   // Award Notice filter
   awardNotice:    boolean;
   setAwardNotice: Dispatch<SetStateAction<boolean>>;
+  showBrowser:    boolean;
+  setShowBrowser: Dispatch<SetStateAction<boolean>>;
   // Reset everything back to idle
   reset: () => void;
 }
@@ -46,6 +48,7 @@ export function SamScraperProvider({ children }: { children: ReactNode }) {
   const [dateTo,      setDateTo]      = useState("");
   const [naicsCodes,  setNaicsCodes]  = useState<string[]>([]);
   const [awardNotice, setAwardNotice] = useState(false);
+  const [showBrowser, setShowBrowser] = useState(false);
 
   const reset = useCallback(() => {
     setState(INITIAL);
@@ -53,11 +56,12 @@ export function SamScraperProvider({ children }: { children: ReactNode }) {
     setDateTo("");
     setNaicsCodes([]);
     setAwardNotice(false);
+    setShowBrowser(false);
   }, []);
 
   return (
     <SamScraperContext.Provider
-      value={{ state, setState, dateFrom, setDateFrom, dateTo, setDateTo, naicsCodes, setNaicsCodes, awardNotice, setAwardNotice, reset }}
+      value={{ state, setState, dateFrom, setDateFrom, dateTo, setDateTo, naicsCodes, setNaicsCodes, awardNotice, setAwardNotice, showBrowser, setShowBrowser, reset }}
     >
       {children}
     </SamScraperContext.Provider>

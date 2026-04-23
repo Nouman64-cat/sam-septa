@@ -30,3 +30,14 @@ export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
 export async function stopJob(jobId: string): Promise<StopResponse> {
   return post<Record<string, never>, StopResponse>(`/stop/${jobId}`, {});
 }
+
+/**
+ * Fetch a live screenshot from a running SAM job.
+ */
+export async function getJobScreenshot(jobId: string): Promise<{ screenshot: string }> {
+  const res = await fetch(`${BASE_URL}/sam/screenshot/${jobId}`);
+  if (!res.ok) {
+    throw new Error(`Screenshot fetch failed: HTTP ${res.status}`);
+  }
+  return res.json() as Promise<{ screenshot: string }>;
+}

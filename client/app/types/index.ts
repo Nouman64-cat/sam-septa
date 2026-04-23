@@ -5,6 +5,7 @@ export interface SamScrapeRequest {
   date_to?:      string;     // to-date   YYYY-MM-DD
   naics_codes?:  string[];   // list of 6-digit NAICS codes
   award_notice?: boolean;    // include Award Notice notice type in URL filter
+  headless?:     boolean;
 }
 
 export interface SeptaScrapeRequest {

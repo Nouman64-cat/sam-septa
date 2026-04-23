@@ -131,7 +131,7 @@ async def scrape_sam(body: SamScrapeRequest):
     def _run():
         try:
             scraper = SAMGovScraper(
-                headless     = False,
+                headless     = body.headless,
                 date_filter  = body.date_filter,
                 date_to      = body.date_to,
                 naics_codes  = body.naics_codes,
@@ -140,6 +140,7 @@ async def scrape_sam(body: SamScrapeRequest):
             scraper._stop_event       = stop_event
             scraper.skip_csv          = True      # no CSV files
             scraper._on_bid_extracted = _on_bid   # live DB insert per bid
+            _jobs[job_id]["scraper"]  = scraper   # store for live preview
 
             scraper.run(max_records=1000)
 
@@ -217,3 +218,19 @@ async def evaluate_sam(body: SamEvaluateRequest):
 
     status_code = 503 if result["decision"] == "ERROR" else 200
     return JSONResponse(content=result, status_code=status_code)
+
+
+@router.get("/sam/screenshot/{job_id}")
+async def get_sam_screenshot(job_id: str):
+    """Fetch a live base64 screenshot from the running scraper."""
+    from main import _jobs
+    job = _jobs.get(job_id)
+    if not job or "scraper" not in job:
+        return JSONResponse({"error": "Job not found or scraper not active"}, status_code=404)
+    
+    scraper: SAMGovScraper = job["scraper"]
+    b64 = scraper.get_screenshot_base64()
+    if not b64:
+        return JSONResponse({"error": "Could not capture screenshot"}, status_code=500)
+    
+    return JSONResponse({"screenshot": b64})

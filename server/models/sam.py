@@ -33,6 +33,7 @@ class SamScrapeRequest(BaseModel):
     date_to:      Optional[str]       = None   # to-date    YYYY-MM-DD  (end   of range)
     naics_codes:  Optional[list[str]] = None   # list of 6-digit NAICS codes to filter
     award_notice: bool                = False  # include Award Notice type in URL filter
+    headless:     bool                = True   # run in background (headless)
 
 
 class SamBid(SQLModel, table=True):

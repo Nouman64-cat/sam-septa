@@ -35,6 +35,8 @@ def setup_driver(headless: bool, cfg: dict) -> webdriver.Chrome:
     if headless:
         # --headless=new is required for CDP Page.setDownloadBehavior to work
         chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080")
 
     chrome_options.add_argument("--no-sandbox")
 

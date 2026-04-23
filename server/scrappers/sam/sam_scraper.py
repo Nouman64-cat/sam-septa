@@ -160,7 +160,7 @@ class SAMGovScraper:
 
     def __init__(
         self,
-        headless: bool = False,
+        headless: bool = True,
         date_filter: str = None,   # kept for backward-compat; treated as date_from
         date_to: str = None,
         naics_codes: list[str] | None = None,
@@ -935,6 +935,15 @@ class SAMGovScraper:
     def close(self):
         if self.driver:
             self.driver.quit()
+
+    def get_screenshot_base64(self) -> str | None:
+        """Capture the current browser state as a base64 string."""
+        if not self.driver:
+            return None
+        try:
+            return self.driver.get_screenshot_as_base64()
+        except Exception:
+            return None
 
 
 # ---------------------------------------------------------------------------
