@@ -1,4 +1,4 @@
-"""Eval Config routes — manage kill_words and allowed_states via the DB."""
+"""Eval Config routes — manage kill_words, excluded_services, and allowed_services via the DB."""
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -10,8 +10,11 @@ from models.eval_config import EvalConfig
 
 router = APIRouter(prefix="/eval-config", tags=["eval-config"])
 
-CATEGORY_KILL_WORD    = "kill_word"
-CATEGORY_ALLOWED_STATE = "allowed_state"
+CATEGORY_KILL_WORD        = "kill_word"
+CATEGORY_EXCLUDED_SERVICE = "excluded_service"
+CATEGORY_ALLOWED_SERVICE  = "allowed_service"
+
+_ERR_EMPTY = "value must not be empty"
 
 
 class EvalConfigValueRequest(BaseModel):
@@ -19,21 +22,23 @@ class EvalConfigValueRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# GET — return both lists in one call
+# GET — return all three lists in one call
 # ---------------------------------------------------------------------------
 
 @router.get("")
 async def get_eval_config():
-    """Return all kill words and allowed states from DB."""
+    """Return all kill words, excluded services, and allowed services from DB."""
     with Session(engine) as s:
         rows = s.exec(select(EvalConfig)).all()
 
-    kill_words    = sorted(r.value for r in rows if r.category == CATEGORY_KILL_WORD)
-    allowed_states = sorted(r.value for r in rows if r.category == CATEGORY_ALLOWED_STATE)
+    kill_words        = sorted(r.value for r in rows if r.category == CATEGORY_KILL_WORD)
+    excluded_services = sorted(r.value for r in rows if r.category == CATEGORY_EXCLUDED_SERVICE)
+    allowed_services  = sorted(r.value for r in rows if r.category == CATEGORY_ALLOWED_SERVICE)
 
     return JSONResponse({
-        "kill_words":    kill_words,
-        "allowed_states": allowed_states,
+        "kill_words":        kill_words,
+        "excluded_services": excluded_services,
+        "allowed_services":  allowed_services,
     })
 
 
@@ -46,7 +51,7 @@ async def add_kill_word(body: EvalConfigValueRequest):
     """Add a kill word. Duplicate values are silently ignored."""
     value = body.value.strip().lower()
     if not value:
-        raise HTTPException(status_code=422, detail="value must not be empty")
+        raise HTTPException(status_code=422, detail=_ERR_EMPTY)
 
     with Session(engine) as s:
         existing = s.exec(
@@ -82,43 +87,87 @@ async def delete_kill_word(value: str):
 
 
 # ---------------------------------------------------------------------------
-# Allowed-state endpoints
+# Excluded service endpoints (Rule B)
 # ---------------------------------------------------------------------------
 
-@router.post("/allowed-states")
-async def add_allowed_state(body: EvalConfigValueRequest):
-    """Add a state/region to the allowed list. Duplicate values are silently ignored."""
+@router.post("/excluded-services")
+async def add_excluded_service(body: EvalConfigValueRequest):
+    """Add an excluded service category (Rule B). Duplicate values are silently ignored."""
     value = body.value.strip().lower()
     if not value:
-        raise HTTPException(status_code=422, detail="value must not be empty")
+        raise HTTPException(status_code=422, detail=_ERR_EMPTY)
 
     with Session(engine) as s:
         existing = s.exec(
             select(EvalConfig).where(
-                EvalConfig.category == CATEGORY_ALLOWED_STATE,
+                EvalConfig.category == CATEGORY_EXCLUDED_SERVICE,
                 EvalConfig.value == value,
             )
         ).first()
         if not existing:
-            s.add(EvalConfig(category=CATEGORY_ALLOWED_STATE, value=value))
+            s.add(EvalConfig(category=CATEGORY_EXCLUDED_SERVICE, value=value))
             s.commit()
 
     return JSONResponse({"success": True, "value": value})
 
 
-@router.delete("/allowed-states/{value}")
-async def delete_allowed_state(value: str):
-    """Remove a state/region from the allowed list."""
+@router.delete("/excluded-services/{value}")
+async def delete_excluded_service(value: str):
+    """Remove an excluded service category."""
     value = value.strip().lower()
     with Session(engine) as s:
         row = s.exec(
             select(EvalConfig).where(
-                EvalConfig.category == CATEGORY_ALLOWED_STATE,
+                EvalConfig.category == CATEGORY_EXCLUDED_SERVICE,
                 EvalConfig.value == value,
             )
         ).first()
         if not row:
-            raise HTTPException(status_code=404, detail=f"Allowed state '{value}' not found")
+            raise HTTPException(status_code=404, detail=f"Excluded service '{value}' not found")
+        s.delete(row)
+        s.commit()
+
+    return JSONResponse({"success": True, "value": value})
+
+
+# ---------------------------------------------------------------------------
+# Allowed service endpoints (Rule C)
+# ---------------------------------------------------------------------------
+
+@router.post("/allowed-services")
+async def add_allowed_service(body: EvalConfigValueRequest):
+    """Add an allowed service category (Rule C). Duplicate values are silently ignored."""
+    value = body.value.strip().lower()
+    if not value:
+        raise HTTPException(status_code=422, detail=_ERR_EMPTY)
+
+    with Session(engine) as s:
+        existing = s.exec(
+            select(EvalConfig).where(
+                EvalConfig.category == CATEGORY_ALLOWED_SERVICE,
+                EvalConfig.value == value,
+            )
+        ).first()
+        if not existing:
+            s.add(EvalConfig(category=CATEGORY_ALLOWED_SERVICE, value=value))
+            s.commit()
+
+    return JSONResponse({"success": True, "value": value})
+
+
+@router.delete("/allowed-services/{value}")
+async def delete_allowed_service(value: str):
+    """Remove an allowed service category."""
+    value = value.strip().lower()
+    with Session(engine) as s:
+        row = s.exec(
+            select(EvalConfig).where(
+                EvalConfig.category == CATEGORY_ALLOWED_SERVICE,
+                EvalConfig.value == value,
+            )
+        ).first()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Allowed service '{value}' not found")
         s.delete(row)
         s.commit()
 

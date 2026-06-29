@@ -16,16 +16,17 @@ class SamEvaluateRequest(BaseModel):
 
 class SamEvaluateResponse(BaseModel):
     """Response body for POST /evaluate-sam."""
-    bid_id:             str
-    decision:           str                    # "PASS" | "REJECT" | "ERROR"
-    stopped_at_layer:   int                    # 1-4
-    reason:             str
-    kill_word_found:    Optional[str] = None
-    territory_found:    Optional[str] = None
-    context_snippet:    Optional[str] = None
-    llm_classification: Optional[str] = None
-    llm_raw_response:   Optional[str] = None
-    elapsed_ms:         float
+    bid_id:            str
+    decision:          str                     # "PURSUE" | "REJECT" | "MANUAL_REVIEW" | "ERROR"
+    stopped_at_step:   Optional[int] = None    # 1-5
+    reason:            str
+    kill_word_found:   Optional[str] = None
+    requirement_type:  Optional[str] = None    # "HARDWARE" | "SERVICE"
+    service_excluded:  Optional[str] = None    # "YES" | "NO"
+    service_allowed:   Optional[str] = None    # "YES" | "NO"
+    location:          Optional[str] = None    # "US_MAINLAND" | "OUTSIDE_MAINLAND"
+    llm_raw_responses: list           = []
+    elapsed_ms:        float
 
 
 class SamScrapeRequest(BaseModel):
@@ -59,7 +60,7 @@ class SamBid(SQLModel, table=True):
     date_offers_due:  str           = Field(default="", max_length=50)
     published_date:   str           = Field(default="", max_length=50)
     # ── Evaluation results (populated inline during scraping) ─────────────────
-    decision:         Optional[str] = Field(default=None, max_length=10)   # PASS|REJECT|ERROR|PENDING
+    decision:         Optional[str] = Field(default=None, max_length=20)   # PURSUE|REJECT|MANUAL_REVIEW|ERROR|PENDING
     reason:           Optional[str] = Field(default=None, sa_column=Column(Text))
     # ── Metadata ──────────────────────────────────────────────────────────────
     scraped_at:       datetime      = Field(default_factory=datetime.utcnow)

@@ -94,31 +94,58 @@ sam:
       - "defense logistics agency"
 
   # --------------------------------------------------------------------------
-  # Bid evaluation (4-layer smart filter for /evaluate-sam endpoint)
+  # Bid evaluation (DOC-20260625 criteria: requirement-type-first, then location)
   # --------------------------------------------------------------------------
   evaluation:
-    # Layer 1: kill-words — instant REJECT if found anywhere in full_text
+    # Step 1: kill-words — instant REJECT if found anywhere in full_text
     kill_words:
       - "idiq"
       - "market research"
       - "rfi"
       - "sources sought"
 
-    # Layer 2: restricted territories — triggers LLM analysis if found
-    restricted_territories:
-      - "guam"
-      - "puerto rico"
-      - "us virgin islands"
-      - "american samoa"
-      - "northern mariana islands"
+    # Rule B — excluded services: REJECT regardless of location
+    # DB values override these at runtime; these are fallback defaults only.
+    excluded_services:
+      - "maintenance, repair and inspection services"
+      - "management services"
+      - "management software"
+      - "audit"
+      - "construction & demolition services"
+      - "rental of equipment"
+      - "waste management services"
+      - "promotional services"
+      - "training services"
+      - "custodial services"
+      - "lease of equipment"
+      - "engineering support services"
+      - "hotel room booking and lodging"
+      - "yellow ribbon"
+      - "food items"
+      - "religious & education coordinator"
+      - "real estate"
+      - "aircraft lavatory services"
+      - "marine vessel upgrade"
+      - "research & development"
 
-    # Layer 3: context extraction
-    context_max_chars: 1000        # ~250 tokens
-    paragraph_window: 1            # ±1 paragraphs around match
+    # Rule C — allowed services: PURSUE only if US Mainland
+    # DB values override these at runtime; these are fallback defaults only.
+    allowed_services:
+      - "cable installation"
+      - "fence installation"
+      - "furniture installation"
+      - "ups / generator repair and maintenance"
+      - "it hardware / software installation and maintenance"
+      - "hvac installation, repair and maintenance"
+      - "industrial hardware installation"
+      - "roofing installation, repair and maintenance"
+      - "door / window installation"
+      - "av equipment installation"
+      - "storage rack and shelving installation"
 
-    # Layer 4: Ollama / LLM settings
+    # Ollama / LLM settings
     ollama_model: "llama3"
-    ollama_timeout: 30             # seconds
+    ollama_timeout: 30             # seconds (reserved for future use)
 
   # --------------------------------------------------------------------------
   # Date parsing

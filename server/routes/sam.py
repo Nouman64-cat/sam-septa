@@ -67,38 +67,19 @@ async def scrape_sam(body: SamScrapeRequest):
         full_text = bid.get("Full Text", "")
         notice_id = bid.get("Notice ID") or bid.get("Notice Title", "unknown")
 
-        # Comprehensive list of all US states + DC + territories.
-        # restricted = everything NOT in the user's allowed_states list.
-        _ALL_US_REGIONS = {
-            "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
-            "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
-            "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana",
-            "maine", "maryland", "massachusetts", "michigan", "minnesota",
-            "mississippi", "missouri", "montana", "nebraska", "nevada",
-            "new hampshire", "new jersey", "new mexico", "new york",
-            "north carolina", "north dakota", "ohio", "oklahoma", "oregon",
-            "pennsylvania", "rhode island", "south carolina", "south dakota",
-            "tennessee", "texas", "utah", "vermont", "virginia", "washington",
-            "west virginia", "wisconsin", "wyoming",
-            "district of columbia", "washington dc",
-            "puerto rico", "guam", "us virgin islands",
-            "american samoa", "northern mariana islands",
-        }
-
         try:
             with Session(engine) as _es:
                 cfg_rows = _es.exec(select(EvalConfig)).all()
-            kill_words     = [r.value for r in cfg_rows if r.category == "kill_word"]
-            allowed_states = {r.value for r in cfg_rows if r.category == "allowed_state"}
-            # Every region not explicitly allowed becomes a tripwire
-            restricted_territories = list(_ALL_US_REGIONS - allowed_states)
+            kill_words        = [r.value for r in cfg_rows if r.category == "kill_word"]
+            excluded_services = [r.value for r in cfg_rows if r.category == "excluded_service"]
+            allowed_services  = [r.value for r in cfg_rows if r.category == "allowed_service"]
 
-            # Merge into YAML config dict for evaluator compatibility
+            # Merge DB values into YAML config for evaluator
             _eval_cfg = dict(_SAM_CONFIG)
-            _eval_cfg.setdefault("evaluation", {})
-            _eval_cfg["evaluation"] = dict(_eval_cfg["evaluation"])
-            _eval_cfg["evaluation"]["kill_words"]            = kill_words
-            _eval_cfg["evaluation"]["restricted_territories"] = restricted_territories
+            _eval_cfg["evaluation"] = dict(_eval_cfg.get("evaluation", {}))
+            _eval_cfg["evaluation"]["kill_words"]        = kill_words
+            _eval_cfg["evaluation"]["excluded_services"] = excluded_services
+            _eval_cfg["evaluation"]["allowed_services"]  = allowed_services
 
             eval_result = evaluate_bid(notice_id, full_text, _eval_cfg)
             decision = eval_result.get("decision", "PENDING")
@@ -209,12 +190,24 @@ async def export_sam(job_id: Optional[str] = Query(default=None)):
 @router.post("/evaluate-sam")
 async def evaluate_sam(body: SamEvaluateRequest):
     """
-    4-layer smart bid evaluator.
+    Bid evaluator (DOC-20260625 criteria).
 
-    Accepts bid_id + full_text, returns PASS / REJECT with reasoning.
-    Layers: Kill-Word → Geographic → Context Extraction → Ollama LLM.
+    Accepts bid_id + full_text, returns PURSUE / REJECT / MANUAL_REVIEW with reasoning.
+    Steps: Kill-Word → Requirement Type → Excluded Service → Allowed Service → Location.
     """
-    result = evaluate_bid(body.bid_id, body.full_text, _SAM_CONFIG)
+    with Session(engine) as _es:
+        cfg_rows = _es.exec(select(EvalConfig)).all()
+    kill_words        = [r.value for r in cfg_rows if r.category == "kill_word"]
+    excluded_services = [r.value for r in cfg_rows if r.category == "excluded_service"]
+    allowed_services  = [r.value for r in cfg_rows if r.category == "allowed_service"]
+
+    _eval_cfg = dict(_SAM_CONFIG)
+    _eval_cfg["evaluation"] = dict(_eval_cfg.get("evaluation", {}))
+    _eval_cfg["evaluation"]["kill_words"]        = kill_words
+    _eval_cfg["evaluation"]["excluded_services"] = excluded_services
+    _eval_cfg["evaluation"]["allowed_services"]  = allowed_services
+
+    result = evaluate_bid(body.bid_id, body.full_text, _eval_cfg)
 
     status_code = 503 if result["decision"] == "ERROR" else 200
     return JSONResponse(content=result, status_code=status_code)

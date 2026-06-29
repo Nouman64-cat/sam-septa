@@ -1,8 +1,9 @@
 import { get, post, del as apiDel } from "./api";
 
 export interface EvalConfigData {
-  kill_words:    string[];
-  allowed_states: string[];
+  kill_words:        string[];
+  excluded_services: string[];
+  allowed_services:  string[];
 }
 
 export async function getEvalConfig(): Promise<EvalConfigData> {
@@ -17,10 +18,18 @@ export async function deleteKillWord(value: string): Promise<void> {
   await apiDel(`/eval-config/kill-words/${encodeURIComponent(value)}`);
 }
 
-export async function addAllowedState(value: string): Promise<void> {
-  await post("/eval-config/allowed-states", { value });
+export async function addExcludedService(value: string): Promise<void> {
+  await post("/eval-config/excluded-services", { value });
 }
 
-export async function deleteAllowedState(value: string): Promise<void> {
-  await apiDel(`/eval-config/allowed-states/${encodeURIComponent(value)}`);
+export async function deleteExcludedService(value: string): Promise<void> {
+  await apiDel(`/eval-config/excluded-services/${encodeURIComponent(value)}`);
+}
+
+export async function addAllowedService(value: string): Promise<void> {
+  await post("/eval-config/allowed-services", { value });
+}
+
+export async function deleteAllowedService(value: string): Promise<void> {
+  await apiDel(`/eval-config/allowed-services/${encodeURIComponent(value)}`);
 }

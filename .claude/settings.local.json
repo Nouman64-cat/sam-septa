@@ -14,7 +14,17 @@
       "Bash(python -c \"import main; print\\(''''OK''''\\)\")",
       "Bash(curl -s http://localhost:3000/sam)",
       "Bash(head -20 grep -n \"class SamScrapeRequest\\\\|award_notice\" C:/projects/sam-septa/server/models/*.py)",
-      "Bash(.venv/Scripts/python -c \":*)"
+      "Bash(.venv/Scripts/python -c \":*)",
+      "Bash(python3 -c ' *)",
+      "Bash(pip install *)",
+      "Bash(python migrate_to_new_eval.py)",
+      "Bash(cat /etc/resolv.conf)",
+      "Read(//run/systemd/resolve/**)",
+      "Bash(resolvectl status *)",
+      "Bash(resolvectl query *)",
+      "Bash(curl -I --dns-servers 8.8.8.8 https://sam.gov)",
+      "Bash(nslookup sam.gov 8.8.8.8)",
+      "Bash(curl -I --connect-timeout 10 https://143.204.106.50 -H \"Host: sam.gov\")"
     ]
   }
 }

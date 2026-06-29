@@ -1,16 +1,18 @@
 """
-SAM.gov Scraper — 4-layer smart bid evaluator.
+SAM.gov Scraper — bid evaluator (DOC-20260625 criteria).
 
-Evaluates a bid's full text (description + extracted document text) through
-a fast, tiered pipeline:
+Decision flow (requirement-type-first, location second):
 
-  Layer 1  Kill-Word Sieve       → instant REJECT if dealbreaker found
-  Layer 2  Geographic Tripwire   → instant PASS if no restricted territory
-  Layer 3  Context Extraction    → slice ~250 tokens around territory match
-  Layer 4  GPU Inference (Ollama)→ SERVICES=REJECT / HARDWARE=PASS
+  Step 1  Kill-Word Sieve        → instant REJECT if dealbreaker found
+  Step 2  Requirement Type (LLM) → HARDWARE → PURSUE (any location)
+  Step 3  Excluded Service? (LLM)→ Rule B match → REJECT (any location)
+  Step 4  Allowed Service? (LLM) → Rule C match → proceed to Step 5
+  Step 5  Place of Performance   → US Mainland → PURSUE, else REJECT
+           (keyword check first, LLM fallback)
 
-Only ~1 % of bids ever reach Layer 4. The full 120 K-char payload is never
-sent to the LLM — only the ~250-token context window is.
+When a service matches neither Rule B nor Rule C:
+  - US Mainland → MANUAL_REVIEW
+  - Outside US Mainland → REJECT
 """
 
 import logging
@@ -18,15 +20,22 @@ import time
 
 logger = logging.getLogger(__name__)
 
+# Non-mainland US territories — always outside US Mainland for services
+_NON_MAINLAND = [
+    "guam",
+    "puerto rico",
+    "us virgin islands",
+    "u.s. virgin islands",
+    "american samoa",
+    "northern mariana islands",
+]
+
 
 # ---------------------------------------------------------------------------
-# Layer 1 — Kill-Word Sieve
+# Step 1 — Kill-Word Sieve
 # ---------------------------------------------------------------------------
 
-def _layer1_kill_words(full_text_lower: str, kill_words: list[str]) -> str | None:
-    """
-    Return the first kill-word found in *full_text_lower*, or None.
-    """
+def _step1_kill_words(full_text_lower: str, kill_words: list[str]) -> str | None:
     for word in kill_words:
         if word in full_text_lower:
             return word
@@ -34,103 +43,24 @@ def _layer1_kill_words(full_text_lower: str, kill_words: list[str]) -> str | Non
 
 
 # ---------------------------------------------------------------------------
-# Layer 2 — Geographic Tripwire
+# LLM helper
 # ---------------------------------------------------------------------------
 
-def _layer2_territory_check(
-    full_text_lower: str,
-    territories: list[str],
-) -> tuple[str | None, int]:
-    """
-    Return (territory, match_index) for the first restricted territory found,
-    or (None, -1) if none match.
-    """
-    for territory in territories:
-        idx = full_text_lower.find(territory)
-        if idx != -1:
-            return territory, idx
-    return None, -1
-
-
-# ---------------------------------------------------------------------------
-# Layer 3 — Context Extraction
-# ---------------------------------------------------------------------------
-
-def _layer3_extract_context(
-    full_text: str,
-    match_index: int,
-    max_chars: int = 1000,
-    paragraph_window: int = 1,
-) -> str:
-    """
-    Slice out the paragraph containing *match_index* plus ±paragraph_window
-    surrounding paragraphs.  Cap at *max_chars* characters.
-    """
-    paragraphs = full_text.split("\n\n")
-    if not paragraphs:
-        return full_text[:max_chars]
-
-    # Map match_index to a paragraph index via cumulative offsets
-    offset = 0
-    target_idx = 0
-    for i, para in enumerate(paragraphs):
-        # +2 accounts for the "\n\n" delimiter between paragraphs
-        end = offset + len(para) + (2 if i < len(paragraphs) - 1 else 0)
-        if match_index < end:
-            target_idx = i
-            break
-        offset = end
-
-    lo = max(0, target_idx - paragraph_window)
-    hi = min(len(paragraphs), target_idx + paragraph_window + 1)
-
-    context = "\n\n".join(paragraphs[lo:hi])
-
-    if len(context) > max_chars:
-        # Centre the window around the match point within the context
-        local_idx = match_index - sum(
-            len(paragraphs[j]) + 2 for j in range(lo)
-        )
-        local_idx = max(0, min(local_idx, len(context)))
-        half = max_chars // 2
-        start = max(0, local_idx - half)
-        end = start + max_chars
-        if end > len(context):
-            end = len(context)
-            start = max(0, end - max_chars)
-        context = context[start:end]
-
-    return context
-
-
-# ---------------------------------------------------------------------------
-# Layer 4 — GPU Inference via Ollama
-# ---------------------------------------------------------------------------
-
-def _layer4_llm_classify(
-    context_snippet: str,
+def _call_llm(
+    prompt: str,
+    expected_words: list[str],
     model: str = "llama3",
-    timeout: int = 30,
 ) -> tuple[str, str]:
     """
-    Send the context snippet to Ollama and get a SERVICES / HARDWARE answer.
-
-    Returns (classification, raw_response).
-    classification is "SERVICES", "HARDWARE", or "AMBIGUOUS".
+    Call Ollama and return (matched_keyword | "AMBIGUOUS", raw_response).
+    Matches the first expected_word found (case-insensitive) in the response.
     """
     try:
         import ollama
     except ImportError:
         raise RuntimeError(
-            "The 'ollama' Python package is not installed. "
-            "Run: pip install ollama"
+            "The 'ollama' Python package is not installed. Run: pip install ollama"
         )
-
-    prompt = (
-        "Does the following text describe providing services or hardware?\n"
-        "Answer with exactly one word: SERVICES or HARDWARE.\n\n"
-        f"Text:\n{context_snippet}"
-    )
 
     try:
         response = ollama.chat(
@@ -143,11 +73,115 @@ def _layer4_llm_classify(
         raise RuntimeError(f"Ollama request failed: {exc}")
 
     raw_upper = raw.upper()
-    if "SERVICES" in raw_upper:
-        return "SERVICES", raw
-    if "HARDWARE" in raw_upper:
-        return "HARDWARE", raw
+    for word in expected_words:
+        if word.upper() in raw_upper:
+            return word, raw
     return "AMBIGUOUS", raw
+
+
+# ---------------------------------------------------------------------------
+# Step 2 — Requirement Type Classification
+# ---------------------------------------------------------------------------
+
+def _step2_classify_requirement(
+    full_text: str, model: str = "llama3"
+) -> tuple[str, str]:
+    """Returns ("HARDWARE" | "SERVICE" | "AMBIGUOUS", raw_response)."""
+    prompt = (
+        "You are evaluating a US government procurement bid.\n"
+        "Is the PRIMARY requirement of this bid for:\n"
+        "- HARDWARE: physical goods, equipment, materials, supplies, or products to be delivered\n"
+        "- SERVICE: work to be performed, labor, maintenance, repair, installation, or professional services\n\n"
+        "Answer with exactly one word: HARDWARE or SERVICE.\n\n"
+        f"Bid text:\n{full_text[:3000]}"
+    )
+    return _call_llm(prompt, ["HARDWARE", "SERVICE"], model)
+
+
+# ---------------------------------------------------------------------------
+# Step 3 — Excluded Service Check (Rule B)
+# ---------------------------------------------------------------------------
+
+def _step3_excluded_service(
+    full_text: str,
+    excluded_services: list[str],
+    model: str = "llama3",
+) -> tuple[str, str]:
+    """Returns ("YES" | "NO" | "AMBIGUOUS", raw_response)."""
+    if not excluded_services:
+        return "NO", ""
+
+    services_list = "\n".join(f"- {s}" for s in excluded_services)
+    prompt = (
+        "You are evaluating a US government procurement bid.\n"
+        "Does the PRIMARY service requirement of this bid match any of the following "
+        "EXCLUDED service categories?\n\n"
+        f"EXCLUDED categories:\n{services_list}\n\n"
+        "Answer with exactly one word: YES (if it matches any category) or NO (if it does not).\n\n"
+        f"Bid text:\n{full_text[:3000]}"
+    )
+    return _call_llm(prompt, ["YES", "NO"], model)
+
+
+# ---------------------------------------------------------------------------
+# Step 4 — Allowed Service Check (Rule C)
+# ---------------------------------------------------------------------------
+
+def _step4_allowed_service(
+    full_text: str,
+    allowed_services: list[str],
+    model: str = "llama3",
+) -> tuple[str, str]:
+    """Returns ("YES" | "NO" | "AMBIGUOUS", raw_response)."""
+    if not allowed_services:
+        return "NO", ""
+
+    services_list = "\n".join(f"- {s}" for s in allowed_services)
+    prompt = (
+        "You are evaluating a US government procurement bid.\n"
+        "Does the PRIMARY service requirement of this bid match any of the following "
+        "ALLOWED service categories?\n\n"
+        f"ALLOWED categories:\n{services_list}\n\n"
+        "Answer with exactly one word: YES (if it matches any category) or NO (if it does not).\n\n"
+        f"Bid text:\n{full_text[:3000]}"
+    )
+    return _call_llm(prompt, ["YES", "NO"], model)
+
+
+# ---------------------------------------------------------------------------
+# Step 5 — Place of Performance Check
+# ---------------------------------------------------------------------------
+
+def _step5_location_check(
+    full_text: str, model: str = "llama3"
+) -> tuple[str, str]:
+    """
+    Returns ("US_MAINLAND" | "OUTSIDE_MAINLAND", raw_response).
+
+    Fast path: keyword match against known non-mainland territories.
+    LLM fallback: ask the model to classify the place of performance.
+    """
+    text_lower = full_text.lower()
+
+    for territory in _NON_MAINLAND:
+        if territory in text_lower:
+            return "OUTSIDE_MAINLAND", f"keyword: {territory}"
+
+    prompt = (
+        "You are evaluating a US government procurement bid.\n"
+        "Is the place of performance (where the work will be done) within the "
+        "United States Mainland?\n\n"
+        "US MAINLAND = all 50 US states + Washington D.C.\n"
+        "NOT US MAINLAND = Guam, Puerto Rico, US Virgin Islands, American Samoa, "
+        "Northern Mariana Islands, or any foreign country.\n\n"
+        "Answer with exactly one word: MAINLAND or OUTSIDE.\n\n"
+        f"Bid text:\n{full_text[:3000]}"
+    )
+    raw_class, raw_resp = _call_llm(prompt, ["MAINLAND", "OUTSIDE"], model)
+    if raw_class == "MAINLAND":
+        return "US_MAINLAND", raw_resp
+    # OUTSIDE or AMBIGUOUS — conservative fallback is OUTSIDE
+    return "OUTSIDE_MAINLAND", raw_resp
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +190,7 @@ def _layer4_llm_classify(
 
 def evaluate_bid(bid_id: str, full_text: str, config: dict) -> dict:
     """
-    Run the 4-layer evaluation pipeline on a bid.
+    Run the DOC-20260625 evaluation pipeline on a bid.
 
     Parameters
     ----------
@@ -166,111 +200,167 @@ def evaluate_bid(bid_id: str, full_text: str, config: dict) -> dict:
 
     Returns
     -------
-    dict with keys: bid_id, decision, stopped_at_layer, reason,
-    kill_word_found, territory_found, context_snippet,
-    llm_classification, llm_raw_response, elapsed_ms.
+    dict with keys:
+      bid_id, decision, stopped_at_step, reason,
+      kill_word_found, requirement_type,
+      service_excluded, service_allowed, location,
+      llm_raw_responses, elapsed_ms.
+
+    decision values: PURSUE | REJECT | MANUAL_REVIEW | ERROR
     """
     t0 = time.perf_counter()
 
-    eval_cfg = config.get("evaluation", {})
-    kill_words = [w.lower() for w in eval_cfg.get("kill_words", [])]
-    territories = [t.lower() for t in eval_cfg.get("restricted_territories", [])]
-    max_chars = eval_cfg.get("context_max_chars", 1000)
-    para_window = eval_cfg.get("paragraph_window", 1)
-    ollama_model = eval_cfg.get("ollama_model", "llama3")
-    ollama_timeout = eval_cfg.get("ollama_timeout", 30)
+    eval_cfg         = config.get("evaluation", {})
+    kill_words       = [w.lower() for w in eval_cfg.get("kill_words", [])]
+    excluded_services = eval_cfg.get("excluded_services", [])
+    allowed_services  = eval_cfg.get("allowed_services", [])
+    ollama_model     = eval_cfg.get("ollama_model", "llama3")
 
     result = {
-        "bid_id": bid_id,
-        "decision": None,
-        "stopped_at_layer": None,
-        "reason": "",
-        "kill_word_found": None,
-        "territory_found": None,
-        "context_snippet": None,
-        "llm_classification": None,
-        "llm_raw_response": None,
-        "elapsed_ms": 0.0,
+        "bid_id":            bid_id,
+        "decision":          None,
+        "stopped_at_step":   None,
+        "reason":            "",
+        "kill_word_found":   None,
+        "requirement_type":  None,
+        "service_excluded":  None,
+        "service_allowed":   None,
+        "location":          None,
+        "llm_raw_responses": [],
+        "elapsed_ms":        0.0,
     }
 
     full_text_lower = full_text.lower()
 
-    # ── Layer 1: Kill-Word Sieve ─────────────────────────────────────────
-    hit = _layer1_kill_words(full_text_lower, kill_words)
+    # ── Step 1: Kill-Word Sieve ──────────────────────────────────────────────
+    hit = _step1_kill_words(full_text_lower, kill_words)
     if hit:
         result.update(
             decision="REJECT",
-            stopped_at_layer=1,
+            stopped_at_step=1,
             reason=f"Contains dealbreaker: {hit}",
             kill_word_found=hit,
         )
         result["elapsed_ms"] = (time.perf_counter() - t0) * 1000
-        logger.info(f"[EVAL] {bid_id} -> REJECT @ Layer 1 (kill-word: {hit})")
+        logger.info(f"[EVAL] {bid_id} -> REJECT @ Step 1 (kill-word: {hit})")
         return result
 
-    # ── Layer 2: Geographic Tripwire ─────────────────────────────────────
-    territory, match_idx = _layer2_territory_check(full_text_lower, territories)
-    if territory is None:
+    # ── Step 2: Requirement Type Classification ──────────────────────────────
+    try:
+        req_type, raw2 = _step2_classify_requirement(full_text, ollama_model)
+    except RuntimeError as exc:
+        result.update(decision="ERROR", stopped_at_step=2, reason=str(exc))
+        result["elapsed_ms"] = (time.perf_counter() - t0) * 1000
+        logger.exception(f"[EVAL] {bid_id} -> ERROR @ Step 2")
+        return result
+
+    result["requirement_type"] = req_type
+    result["llm_raw_responses"].append({"step": 2, "raw": raw2})
+
+    if req_type == "HARDWARE":
         result.update(
-            decision="PASS",
-            stopped_at_layer=2,
-            reason="No restricted territory found — within allowed regions",
+            decision="PURSUE",
+            stopped_at_step=2,
+            reason="Hardware/material requirement — pursued regardless of location (Rule A)",
         )
         result["elapsed_ms"] = (time.perf_counter() - t0) * 1000
-        logger.info(f"[EVAL] {bid_id} -> PASS @ Layer 2 (no restricted territory)")
+        logger.info(f"[EVAL] {bid_id} -> PURSUE @ Step 2 (HARDWARE)")
         return result
 
-    result["territory_found"] = territory
+    if req_type == "AMBIGUOUS":
+        result.update(
+            decision="REJECT",
+            stopped_at_step=2,
+            reason="Could not classify requirement type — conservative REJECT",
+        )
+        result["elapsed_ms"] = (time.perf_counter() - t0) * 1000
+        logger.info(f"[EVAL] {bid_id} -> REJECT @ Step 2 (AMBIGUOUS requirement type)")
+        return result
 
-    # ── Layer 3: Context Extraction ──────────────────────────────────────
-    context = _layer3_extract_context(full_text, match_idx, max_chars, para_window)
-    result["context_snippet"] = context
-    logger.info(
-        f"[EVAL] {bid_id} -> territory '{territory}' found, "
-        f"extracted {len(context)} char context -> proceeding to Layer 4"
-    )
+    # req_type == "SERVICE" — continue to service list checks
 
-    # ── Layer 4: GPU Inference ───────────────────────────────────────────
+    # ── Step 3: Excluded Service Check (Rule B) ──────────────────────────────
     try:
-        classification, raw_resp = _layer4_llm_classify(
-            context, model=ollama_model, timeout=ollama_timeout
+        excluded, raw3 = _step3_excluded_service(
+            full_text, excluded_services, ollama_model
         )
     except RuntimeError as exc:
-        result.update(
-            decision="ERROR",
-            stopped_at_layer=4,
-            reason=str(exc),
-        )
+        result.update(decision="ERROR", stopped_at_step=3, reason=str(exc))
         result["elapsed_ms"] = (time.perf_counter() - t0) * 1000
-        logger.error(f"[EVAL] {bid_id} -> ERROR @ Layer 4: {exc}")
+        logger.exception(f"[EVAL] {bid_id} -> ERROR @ Step 3")
         return result
 
-    result["llm_classification"] = classification
-    result["llm_raw_response"] = raw_resp
+    result["service_excluded"] = excluded
+    result["llm_raw_responses"].append({"step": 3, "raw": raw3})
 
-    if classification == "SERVICES":
+    if excluded == "YES":
         result.update(
             decision="REJECT",
-            stopped_at_layer=4,
-            reason=f"Restricted Territory ({territory.title()}) + Services",
+            stopped_at_step=3,
+            reason="Excluded service category (Rule B) — rejected regardless of location",
         )
-    elif classification == "HARDWARE":
+        result["elapsed_ms"] = (time.perf_counter() - t0) * 1000
+        logger.info(f"[EVAL] {bid_id} -> REJECT @ Step 3 (excluded service Rule B)")
+        return result
+
+    # ── Step 4: Allowed Service Check (Rule C) ───────────────────────────────
+    try:
+        allowed, raw4 = _step4_allowed_service(
+            full_text, allowed_services, ollama_model
+        )
+    except RuntimeError as exc:
+        result.update(decision="ERROR", stopped_at_step=4, reason=str(exc))
+        result["elapsed_ms"] = (time.perf_counter() - t0) * 1000
+        logger.exception(f"[EVAL] {bid_id} -> ERROR @ Step 4")
+        return result
+
+    result["service_allowed"] = allowed
+    result["llm_raw_responses"].append({"step": 4, "raw": raw4})
+
+    # ── Step 5: Place of Performance Check ──────────────────────────────────
+    try:
+        location, raw5 = _step5_location_check(full_text, ollama_model)
+    except RuntimeError as exc:
+        result.update(decision="ERROR", stopped_at_step=5, reason=str(exc))
+        result["elapsed_ms"] = (time.perf_counter() - t0) * 1000
+        logger.exception(f"[EVAL] {bid_id} -> ERROR @ Step 5")
+        return result
+
+    result["location"] = location
+    result["llm_raw_responses"].append({"step": 5, "raw": raw5})
+
+    if allowed == "NO":
+        # Service not on either list — matrix: US Mainland → MANUAL_REVIEW, else → REJECT
+        if location == "US_MAINLAND":
+            result.update(
+                decision="MANUAL_REVIEW",
+                stopped_at_step=5,
+                reason="Service not in allowed/excluded list + US Mainland — manual review required",
+            )
+        else:
+            result.update(
+                decision="REJECT",
+                stopped_at_step=5,
+                reason="Service not in allowed/excluded list + outside US Mainland",
+            )
+    elif location == "US_MAINLAND":
+        # Allowed service + US Mainland → PURSUE (Rule C)
         result.update(
-            decision="PASS",
-            stopped_at_layer=4,
-            reason=f"Restricted Territory ({territory.title()}) + Hardware Exception",
+            decision="PURSUE",
+            stopped_at_step=5,
+            reason="Allowed service (Rule C) + US Mainland place of performance",
         )
     else:
-        # Ambiguous → conservative REJECT
+        # Allowed service + outside US Mainland → REJECT (Rule C)
         result.update(
             decision="REJECT",
-            stopped_at_layer=4,
-            reason=f"Restricted Territory ({territory.title()}) + Ambiguous LLM response",
+            stopped_at_step=5,
+            reason="Allowed service (Rule C) but performed outside US Mainland",
         )
 
     result["elapsed_ms"] = (time.perf_counter() - t0) * 1000
     logger.info(
-        f"[EVAL] {bid_id} -> {result['decision']} @ Layer 4 "
-        f"(territory={territory}, llm={classification})"
+        f"[EVAL] {bid_id} -> {result['decision']} @ Step 5 "
+        f"(service_allowed={allowed}, location={location})"
     )
     return result
