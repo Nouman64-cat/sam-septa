@@ -24,7 +24,8 @@
       "Bash(resolvectl query *)",
       "Bash(curl -I --dns-servers 8.8.8.8 https://sam.gov)",
       "Bash(nslookup sam.gov 8.8.8.8)",
-      "Bash(curl -I --connect-timeout 10 https://143.204.106.50 -H \"Host: sam.gov\")"
+      "Bash(curl -I --connect-timeout 10 https://143.204.106.50 -H \"Host: sam.gov\")",
+      "Bash(.venv/bin/python test_evaluator_spec.py)"
     ]
   }
 }

@@ -120,6 +120,64 @@ BUG_D = [
 ]
 
 
+# Named real-world regressions for the three targeted fixes (§ fix set 2026-07).
+# Each is keyed by its SAM solicitation number and must REJECT after the fix.
+# Tuple: (solicitation, title, description, naics, reason_must_contain)
+NAMED_FIXES = [
+    # Fix 1 — service-title override (leading "Repair" verb beats PN/QTY signals)
+    ("N6264926Q0427",
+     "FMS Repair of F/A-18 Aircraft Actuator, P/N 1234-5678, QTY 6",
+     "FMS Repair of F/A-18 Aircraft Actuator, P/N 1234-5678, QTY 6",
+     "336413", "Rule B #1"),
+    # Fix 1 — service-title override ("services contract" opening + repair verb)
+    ("N0038326QA098",
+     "USS ISAAC MAYO Awning Repair, NSN 3990-01-234-5678, QTY 4",
+     "This services contract covers the on-site repair and replacement of "
+     "shipboard sun awnings aboard the USS Isaac Mayo.",
+     "314910", "Rule B #1"),
+    # Fix 2 — food-manufacturing NAICS 311 sub-check ("milk")
+    ("13912PR260000020",
+     "Fresh Whole Milk and Dairy Products, weekly delivery",
+     "Fresh Whole Milk and Dairy Products, weekly delivery",
+     "311511", "Rule B #15"),
+    # Fix 2 — food-manufacturing NAICS 311 sub-check (subsistence/poultry)
+    ("15B50926Q00000003",
+     "Bulk Ground Meat and Poultry Subsistence Items, QTY as needed",
+     "Bulk Ground Meat and Poultry Subsistence Items, QTY as needed",
+     "311612", "Rule B #15"),
+    # Fix 3 — overseas base name in description body (Sasebo → outside mainland)
+    ("140D0426Q0420",
+     "MCM-14 Shipboard Generator Repair and Maintenance",
+     "Generator repair and preventive maintenance aboard MCM-14. Place of "
+     "performance: Fleet Activities Sasebo. Contractor to provide all labor.",
+     "811310", "outside US Mainland"),
+]
+
+
+def run_named(sol, title, desc, naics, rule):
+    """Named regression: title and description differ (description carries the
+    'services contract' opening / overseas base name that drives the fix)."""
+    res = evaluate_bid(sol, desc, CONFIG, naics_code=naics, title=title)
+    ok = res["decision"] == "REJECT" and rule.lower() in res["reason"].lower()
+    return ok, res
+
+
+def run_named_suite(name, cases):
+    passed = failed = 0
+    for sol, title, desc, naics, rule in cases:
+        ok, res = run_named(sol, title, desc, naics, rule)
+        if ok:
+            passed += 1
+        else:
+            failed += 1
+            print(f"  ✗ FAIL: {sol} — {title!r} [NAICS {naics or 'N/A'}]")
+            print(f"         expected: REJECT citing {rule!r}")
+            print(f"         got:      {res['decision']} | {res['reason']!r}")
+    status = "✓" if failed == 0 else "✗"
+    print(f"{status} {name}: {passed}/{passed + failed} passed\n")
+    return failed
+
+
 def run_suite(name, cases):
     passed = failed = 0
     for title, naics, dec, rule in cases:
@@ -144,6 +202,7 @@ if __name__ == "__main__":
     total_failed += run_suite("Bug Pattern C — Overseas hardware (11)", BUG_C)
     total_failed += run_suite("Bug Pattern D — Correct rule citation (4)", BUG_D)
     total_failed += run_suite("USCG SFLC part-number hardware bids (6)", SFLC)
+    total_failed += run_named_suite("Named fix regressions — must REJECT (5)", NAMED_FIXES)
     print("=" * 70)
     if total_failed == 0:
         print("ALL TESTS PASSED ✓")

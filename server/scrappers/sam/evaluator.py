@@ -126,6 +126,16 @@ _NON_MAINLAND = [
 ]
 _NON_MAINLAND_ABBR = {"AK", "HI", "GU", "PR", "VI", "AS", "MP"}
 
+# Fix 3: known overseas naval / military base names. For Rule C service bids the
+# place of performance may be stated only in the description body (not the
+# title), so these are matched against the full description text with word
+# boundaries. Any hit flags the bid as outside US Mainland (e.g. MCM-14 Sasebo).
+_OVERSEAS_BASES = [
+    "sasebo", "yokosuka", "yokota", "rota", "bahrain", "manama", "singapore",
+    "guam", "okinawa", "kadena", "osan", "ramstein", "aviano", "sigonella",
+    "souda bay", "diego garcia", "camp humphreys",
+]
+
 # Foreign-location indicators
 _FOREIGN = [
     "germany", "japan", "djibouti", "bermuda", "italy", "korea", "afghanistan",
@@ -137,7 +147,7 @@ _FOREIGN = [
 ]
 
 
-def _detect_location(title: str, hay: str) -> str:
+def _detect_location(title: str, hay: str, body: str = "") -> str:
     """
     Return "US_MAINLAND" or "OUTSIDE_MAINLAND".
 
@@ -152,6 +162,12 @@ def _detect_location(title: str, hay: str) -> str:
             return "OUTSIDE_MAINLAND"
     for kw in _FOREIGN:
         if kw in hay:
+            return "OUTSIDE_MAINLAND"
+    # Fix 3: known overseas base names in the description body (place of
+    # performance is often stated only in the body, not the title).
+    body_l = (body or "").lower()
+    for base in _OVERSEAS_BASES:
+        if re.search(rf"\b{re.escape(base)}\b", body_l):
             return "OUTSIDE_MAINLAND"
     # Postal abbreviations for AK/HI/territories (case-sensitive, word-boundary)
     for abbr in _NON_MAINLAND_ABBR:
@@ -314,6 +330,18 @@ def _check_rule_c(hay: str) -> tuple[int, str] | None:
         return (7, RULE_C[7])
 
     return None
+
+
+# --- Fix 2: consumable-food words for the NAICS 311/312 hardware sub-check ---
+_FOOD_PRODUCT_WORDS = (
+    r"milk", r"meats?", r"poultry", r"produce", r"subsistence", r"food items?",
+)
+
+
+def _title_is_food_item(hay: str) -> bool:
+    """True if the title names a consumable food product (Fix 2). Used only
+    inside the hardware gate for food-manufacturing NAICS (311/312)."""
+    return any(re.search(rf"\b{t}\b", hay) for t in _FOOD_PRODUCT_WORDS)
 
 
 def _check_food(hay: str) -> bool:
@@ -481,7 +509,49 @@ def _has_product_signal(hay: str) -> bool:
     return False
 
 
-def _classify_requirement(hay: str, naics_code: str) -> str:
+# --- Fix 1: service-title override (spec §3 Step 1) ------------------------
+# A leading service verb in the title, or an explicit "for services" /
+# "services contract" phrase in the description opening, marks the bid as a
+# SERVICE even when PN/QTY/NSN product signals are present. This corrects
+# hardware-shaped titles that are really repair/overhaul contracts (e.g. the
+# FMS Repair and USS Isaac Mayo Awning cases).
+_SERVICE_TITLE_VERBS = {
+    "repair", "repairs", "repairing",
+    "overhaul", "overhauls", "overhauling",
+    "inspect", "inspection", "inspections", "inspecting",
+    "calibrate", "calibration", "calibrations", "calibrating",
+}
+# A service verb immediately followed by one of these nouns is a hardware
+# SUPPLY ("repair parts", "repair kit", "spare parts") — NOT a service.
+_HARDWARE_NOUN_AFTER = {
+    "part", "parts", "kit", "kits", "spare", "spares",
+    "assortment", "assortments",
+}
+
+
+def _service_verb_leads_title(hay: str) -> bool:
+    """True if the title's first meaningful verb is Repair/Overhaul/Inspect/
+    Calibrate — but NOT when it forms a hardware noun phrase ('repair parts')."""
+    tokens = re.findall(r"[a-z]+", hay)
+    for i, tok in enumerate(tokens):
+        if tok in _SERVICE_TITLE_VERBS:
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+            return nxt not in _HARDWARE_NOUN_AFTER
+    return False
+
+
+def _service_title_override(hay: str, full_text: str) -> bool:
+    """Fix 1 — leading service verb OR a 'for services'/'services contract'
+    phrase in the description's opening 200 characters."""
+    if _service_verb_leads_title(hay):
+        return True
+    opening = (full_text or "")[:200].lower()
+    if "for services" in opening or "services contract" in opening:
+        return True
+    return False
+
+
+def _classify_requirement(hay: str, naics_code: str, full_text: str = "") -> str:
     """
     Return "HARDWARE" or "SERVICE".
 
@@ -500,6 +570,11 @@ def _classify_requirement(hay: str, naics_code: str) -> str:
     # Override rule (spec §3 Step 1) — a product/supply title is HARDWARE even if
     # it contains service words ("repair parts", "spare parts kit", NSN, qty…).
     if _is_manufacturing(prefix):
+        # Fix 1: a leading service verb (Repair/Overhaul/Inspect/Calibrate) or an
+        # explicit "for services"/"services contract" description opening wins
+        # over PN/QTY product signals — this is a service, not a supply.
+        if _service_title_override(hay, full_text):
+            return "SERVICE"
         if _has_product_signal(hay):
             return "HARDWARE"
         if _service_signal_present(hay):
@@ -622,11 +697,20 @@ def evaluate_bid(
         return result
 
     # ── STEP 1: Hardware vs Service ──────────────────────────────────────────
-    req_type = _classify_requirement(hay, naics_code)
+    req_type = _classify_requirement(hay, naics_code, full_text)
     result["requirement_type"] = req_type
 
     # ── STEP 2: Hardware → PURSUE (Rule A), STOP ─────────────────────────────
     if req_type == "HARDWARE":
+        # Fix 2: food-manufacturing NAICS (311/312) sub-check — a consumable
+        # food item is Rule B #15 REJECT even though NAICS is 311–339 hardware.
+        if _naics_prefix(naics_code) in (311, 312) and _title_is_food_item(hay):
+            result.update(
+                decision="REJECT", stopped_at_step=3, rule="B15",
+                requirement_type="SERVICE", reason=reason_rule_b(15, RULE_B[15]),
+            )
+            logger.info(f"[EVAL] {bid_id} -> REJECT @ Rule B #15 (food NAICS 311/312)")
+            return result
         # Food items are the one manufactured-product exception (Rule B #15).
         if _check_food(hay):
             result.update(
@@ -656,7 +740,7 @@ def evaluate_bid(
             return result
 
     # ── STEP 4: Rule C (allowed) check ───────────────────────────────────────
-    location = _detect_location(classify_text, hay)
+    location = _detect_location(classify_text, hay, body=full_text)
     result["location"] = location
 
     if rule_c is not None:
