@@ -57,31 +57,29 @@ async def scrape_sam(body: SamScrapeRequest):
 
     def _on_bid(bid: dict):
         """Called per extracted bid — evaluates, then inserts to DB and updates live counter."""
-        # Run the 4-layer evaluator using the Full Text already in memory.
-        # Kill words + allowed states are fetched live from DB so UI changes
-        # take effect immediately without a server restart.
-        #
-        # Logic: restricted_territories = KNOWN_NON_MAINLAND - allowed_states
-        # i.e. any known non-mainland territory that hasn't been explicitly allowed
-        # will trigger the LLM analysis layer.
-        full_text = bid.get("Full Text", "")
-        notice_id = bid.get("Notice ID") or bid.get("Notice Title", "unknown")
+        # Run the NAICS-first evaluator using the Full Text already in memory.
+        # Kill words are fetched live from DB so UI changes take effect
+        # immediately without a server restart. Requirement-type (hardware vs
+        # service), Rule B/C and location are decided from the NAICS code and
+        # the notice title per SAM_Bid_Evaluation_Spec_v1.
+        full_text  = bid.get("Full Text", "")
+        notice_id  = bid.get("Notice ID") or bid.get("Notice Title", "unknown")
+        title      = bid.get("Notice Title", "")
+        naics_code = bid.get("NAICS Code", "")
 
         try:
             with Session(engine) as _es:
                 cfg_rows = _es.exec(select(EvalConfig)).all()
-            kill_words        = [r.value for r in cfg_rows if r.category == "kill_word"]
-            excluded_services = [r.value for r in cfg_rows if r.category == "excluded_service"]
-            allowed_services  = [r.value for r in cfg_rows if r.category == "allowed_service"]
+            kill_words = [r.value for r in cfg_rows if r.category == "kill_word"]
 
-            # Merge DB values into YAML config for evaluator
             _eval_cfg = dict(_SAM_CONFIG)
             _eval_cfg["evaluation"] = dict(_eval_cfg.get("evaluation", {}))
-            _eval_cfg["evaluation"]["kill_words"]        = kill_words
-            _eval_cfg["evaluation"]["excluded_services"] = excluded_services
-            _eval_cfg["evaluation"]["allowed_services"]  = allowed_services
+            _eval_cfg["evaluation"]["kill_words"] = kill_words
 
-            eval_result = evaluate_bid(notice_id, full_text, _eval_cfg)
+            eval_result = evaluate_bid(
+                notice_id, full_text, _eval_cfg,
+                naics_code=naics_code, title=title,
+            )
             decision = eval_result.get("decision", "PENDING")
             reason   = eval_result.get("reason", "")
         except Exception as _eval_err:
@@ -190,24 +188,24 @@ async def export_sam(job_id: Optional[str] = Query(default=None)):
 @router.post("/evaluate-sam")
 async def evaluate_sam(body: SamEvaluateRequest):
     """
-    Bid evaluator (DOC-20260625 criteria).
+    NAICS-first bid evaluator (SAM_Bid_Evaluation_Spec_v1).
 
-    Accepts bid_id + full_text, returns PURSUE / REJECT / MANUAL_REVIEW with reasoning.
-    Steps: Kill-Word → Requirement Type → Excluded Service → Allowed Service → Location.
+    Accepts bid_id + full_text (+ optional naics_code, title), returns
+    PURSUE / REJECT / MANUAL_REVIEW with a standard-phrase reason.
+    Steps: Kill-Word → Requirement Type (hardware/service) → Rule B → Rule C → Location.
     """
     with Session(engine) as _es:
         cfg_rows = _es.exec(select(EvalConfig)).all()
-    kill_words        = [r.value for r in cfg_rows if r.category == "kill_word"]
-    excluded_services = [r.value for r in cfg_rows if r.category == "excluded_service"]
-    allowed_services  = [r.value for r in cfg_rows if r.category == "allowed_service"]
+    kill_words = [r.value for r in cfg_rows if r.category == "kill_word"]
 
     _eval_cfg = dict(_SAM_CONFIG)
     _eval_cfg["evaluation"] = dict(_eval_cfg.get("evaluation", {}))
-    _eval_cfg["evaluation"]["kill_words"]        = kill_words
-    _eval_cfg["evaluation"]["excluded_services"] = excluded_services
-    _eval_cfg["evaluation"]["allowed_services"]  = allowed_services
+    _eval_cfg["evaluation"]["kill_words"] = kill_words
 
-    result = evaluate_bid(body.bid_id, body.full_text, _eval_cfg)
+    result = evaluate_bid(
+        body.bid_id, body.full_text, _eval_cfg,
+        naics_code=body.naics_code or "", title=body.title or "",
+    )
 
     status_code = 503 if result["decision"] == "ERROR" else 200
     return JSONResponse(content=result, status_code=status_code)

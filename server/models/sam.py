@@ -10,23 +10,21 @@ from pydantic import BaseModel
 
 class SamEvaluateRequest(BaseModel):
     """Request body for POST /evaluate-sam."""
-    bid_id:    str
-    full_text: str
+    bid_id:     str
+    full_text:  str
+    naics_code: Optional[str] = None    # primary hardware/service signal
+    title:      Optional[str] = None    # notice title (categorisation signal)
 
 
 class SamEvaluateResponse(BaseModel):
     """Response body for POST /evaluate-sam."""
-    bid_id:            str
-    decision:          str                     # "PURSUE" | "REJECT" | "MANUAL_REVIEW" | "ERROR"
-    stopped_at_step:   Optional[int] = None    # 1-5
-    reason:            str
-    kill_word_found:   Optional[str] = None
-    requirement_type:  Optional[str] = None    # "HARDWARE" | "SERVICE"
-    service_excluded:  Optional[str] = None    # "YES" | "NO"
-    service_allowed:   Optional[str] = None    # "YES" | "NO"
-    location:          Optional[str] = None    # "US_MAINLAND" | "OUTSIDE_MAINLAND"
-    llm_raw_responses: list           = []
-    elapsed_ms:        float
+    bid_id:           str
+    decision:         str                     # "PURSUE" | "REJECT" | "MANUAL_REVIEW"
+    reason:           str                     # one of the six standard phrases
+    requirement_type: Optional[str] = None    # "HARDWARE" | "SERVICE"
+    rule:             Optional[str] = None    # e.g. "A", "B19", "C6", "none"
+    location:         Optional[str] = None    # "US_MAINLAND" | "OUTSIDE_MAINLAND"
+    stopped_at_step:  Optional[int] = None    # 0-5
 
 
 class SamScrapeRequest(BaseModel):

@@ -1,4 +1,4 @@
-"""EvalConfig — DB-backed kill words and restricted territories for the bid evaluator."""
+"""EvalConfig — DB-backed kill words (and reference service lists) for the bid evaluator."""
 
 from typing import Optional
 from sqlmodel import SQLModel, Field
@@ -6,11 +6,17 @@ from sqlmodel import SQLModel, Field
 
 class EvalConfig(SQLModel, table=True):
     """
-    Stores the evaluator's kill_words and restricted_territories in the DB
-    so they can be managed at runtime without editing any config files.
+    Stores runtime-editable evaluator config in the DB so it can be managed
+    without editing config files.
 
-    category: "kill_word" | "territory"
+    category: "kill_word"        — instant-reject keywords (used by evaluator)
+            | "excluded_service" — Rule B reference list (shown in UI)
+            | "allowed_service"  — Rule C reference list (shown in UI)
     value:    the actual string (stored lowercase for consistent matching)
+
+    Note: Rule B/C matching in the evaluator is NAICS- and keyword-driven per
+    SAM_Bid_Evaluation_Spec_v1; the service rows here are the editable
+    reference catalogue surfaced in the Evaluator Settings panel.
     """
     __tablename__ = "eval_config"
 
